@@ -135,40 +135,19 @@ export const LoginPage = () => {
             </button>
           </form>
 
-          {/* Quick Demo Fill Buttons */}
-          <div className="mt-6 pt-6 border-t border-slate-800">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-2 text-center">
-              Quick-Fill Evaluator Credentials:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => fillDemo('admin', 'Admin@123')}
-                className="py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-[11px] font-mono text-rose-300 border border-slate-700 hover:border-rose-500/50 transition-all text-center"
-              >
-                ADMIN
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('operator', 'Operator@123')}
-                className="py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-[11px] font-mono text-amber-300 border border-slate-700 hover:border-amber-500/50 transition-all text-center"
-              >
-                OPERATOR
-              </button>
-              <button
-                type="button"
-                onClick={() => fillDemo('viewer', 'Viewer@123')}
-                className="py-1.5 px-2 rounded-lg bg-slate-800/80 hover:bg-slate-800 text-[11px] font-mono text-emerald-300 border border-slate-700 hover:border-emerald-500/50 transition-all text-center"
-              >
-                VIEWER
-              </button>
+          {/* Security Clearance Notice */}
+          <div className="mt-6 pt-6 border-t border-slate-800 text-center">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-400">
+              <Shield className="w-3.5 h-3.5 text-rose-400" />
+              <span>Restricted to Authorized Dispatch Operators Only</span>
             </div>
-          </div>
-
-          <div className="mt-4 text-center">
-            <Link to="/register" className="text-xs text-slate-400 hover:text-white transition-colors">
-              Need account creation? <span className="text-rose-400 underline">Register new personnel</span>
-            </Link>
+            <p className="text-[11px] text-slate-400 font-mono mt-3">
+              Citizens requiring emergency assistance should use the{' '}
+              <Link to="/sos" className="text-rose-400 hover:text-rose-300 font-bold underline">
+                Public SOS Portal
+              </Link>
+              .
+            </p>
           </div>
         </div>
       </div>

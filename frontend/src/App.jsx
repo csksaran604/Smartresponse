@@ -37,9 +37,10 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected Routes inside Dashboard Layout */}
-          <Route element={<ProtectedRoute />}>
+          {/* Protected Routes strictly for Authorized Operator / Admin */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMERGENCY_OPERATOR']} />}>
             <Route element={<DashboardLayout />}>
+              <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/" element={<DashboardPage />} />
               <Route path="/portal" element={<CitizenPortalPage />} />
               <Route path="/detection" element={<AccidentDetectionPage />} />
@@ -60,8 +61,8 @@ function App() {
             </Route>
           </Route>
 
-          {/* Catch-all redirect */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Catch-all redirect to public SOS */}
+          <Route path="*" element={<Navigate to="/sos" replace />} />
         </Routes>
       </Router>
     </AuthProvider>

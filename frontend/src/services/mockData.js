@@ -328,30 +328,31 @@ export async function handleMockRequest(config) {
   // -------------------------------------------------------------
   if (url === '/auth/login' && method === 'post') {
     const rawUsername = (body?.username || '').trim().toLowerCase();
-    const users = mockDb.getUsers();
-    
-    // Find matching user or fallback to standard demo user
-    let user = users.find(
-      u => u.username.toLowerCase() === rawUsername || u.email.toLowerCase() === rawUsername
-    );
+    const rawPassword = (body?.password || '').trim();
 
-    if (!user) {
-      if (rawUsername.includes('admin')) {
-        user = DEMO_USERS.admin;
-      } else if (rawUsername.includes('viewer')) {
-        user = DEMO_USERS.viewer;
-      } else {
-        user = DEMO_USERS.operator;
-      }
+    // Verify authorized dispatch credentials
+    if (
+      (rawUsername === 'admin' && (rawPassword === 'Admin@123' || rawPassword === 'admin')) ||
+      (rawUsername === 'operator' && (rawPassword === 'Operator@123' || rawPassword === 'operator'))
+    ) {
+      const user = rawUsername === 'admin' ? DEMO_USERS.admin : DEMO_USERS.operator;
+      const token = `ser-auth-jwt-${user.role.toLowerCase()}-${Date.now()}`;
+      mockDb.addLog('LOGIN', 'User', `Authorized dispatch personnel ${user.username} authenticated`, user.username);
+
+      return mockResponse({
+        message: 'Authentication granted. Accessing Emergency Terminal.',
+        token,
+        user,
+      });
     }
 
-    const token = `ser-demo-jwt-${user.role.toLowerCase()}-${Date.now()}`;
-    mockDb.addLog('LOGIN', 'User', `User ${user.username} authenticated in standalone mode`, user.username);
-
-    return mockResponse({
-      message: 'Login successful (Simulation Mode)',
-      token,
-      user,
+    // Reject all unauthorized access
+    return Promise.reject({
+      response: {
+        status: 401,
+        data: { error: 'Access Denied: Invalid call-sign or dispatch security password.' },
+      },
+      message: 'Unauthorized dispatch access',
     });
   }
 
