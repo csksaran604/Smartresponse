@@ -3,10 +3,13 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardLayout } from './layouts/DashboardLayout';
+import { EmergencyAlertModal } from './components/EmergencyAlertModal';
 
 // Pages
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { PublicSosPage } from './pages/PublicSosPage';
+import { CitizenPortalPage } from './pages/CitizenPortalPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AccidentDetectionPage } from './pages/AccidentDetectionPage';
 import { IncidentsPage } from './pages/IncidentsPage';
@@ -19,14 +22,18 @@ import { UsersPage } from './pages/UsersPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
-import { CitizenPortalPage } from './pages/CitizenPortalPage';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
+        {/* Global Emergency Alert Listener (Siren + Modal when mobile triggers SOS) */}
+        <EmergencyAlertModal />
+
         <Routes>
-          {/* Public Routes */}
+          {/* Public Routes (Zero Login Required for SOS and Citizen Help) */}
+          <Route path="/sos" element={<PublicSosPage />} />
+          <Route path="/citizen" element={<PublicSosPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
 
@@ -34,7 +41,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/citizen" element={<CitizenPortalPage />} />
+              <Route path="/portal" element={<CitizenPortalPage />} />
               <Route path="/detection" element={<AccidentDetectionPage />} />
               <Route path="/incidents" element={<IncidentsPage />} />
               <Route path="/incidents/:id" element={<IncidentDetailPage />} />

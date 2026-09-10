@@ -47,6 +47,31 @@ export const LoginPage = () => {
           <p className="text-xs text-slate-400 font-mono mt-1">Smart Emergency Response & Accident Detection</p>
         </div>
 
+        {/* Public SOS Quick Access Alert Banner */}
+        <Link
+          to="/sos"
+          className="mb-4 block p-3.5 rounded-2xl bg-gradient-to-r from-rose-600/30 via-red-600/20 to-amber-600/20 border-2 border-rose-500/60 hover:border-rose-400 shadow-xl shadow-rose-950/50 transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-rose-500 flex items-center justify-center animate-pulse">
+                <Radio className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <span className="text-xs font-black text-rose-300 uppercase tracking-wider block">
+                  🚨 NEED URGENT HELP? 1-TAP SOS
+                </span>
+                <span className="text-[11px] text-slate-300 font-mono">
+                  Public Citizen Portal • No Login Required
+                </span>
+              </div>
+            </div>
+            <span className="text-xs font-mono font-bold text-amber-400 group-hover:translate-x-1 transition-transform">
+              OPEN SOS →
+            </span>
+          </div>
+        </Link>
+
         {/* Login Box */}
         <div className="glass-panel p-8 rounded-2xl border border-slate-800 shadow-2xl relative">
           <h2 className="text-lg font-bold text-white mb-2">Terminal Authentication</h2>
