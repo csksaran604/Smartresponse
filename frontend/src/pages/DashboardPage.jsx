@@ -46,6 +46,22 @@ export const DashboardPage = () => {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeSos, setActiveSos] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ser_active_sos');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const handleSos = (e) => {
+      if (e.detail) setActiveSos(e.detail);
+    };
+    window.addEventListener('ser_emergency_sos', handleSos);
+    return () => window.removeEventListener('ser_emergency_sos', handleSos);
+  }, []);
 
   const fetchDashboardData = async () => {
     try {
@@ -176,6 +192,55 @@ export const DashboardPage = () => {
           </Link>
         </div>
       </div>
+
+      {/* Active Live Citizen SOS Banner */}
+      {activeSos && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-red-950/70 to-slate-900 border-2 border-rose-500 shadow-2xl shadow-rose-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-pulse">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-rose-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-rose-900 animate-bounce">
+              <Radio className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase text-rose-300 font-mono tracking-wider">
+                  🚨 LIVE CITIZEN SOS SIGNAL
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {activeSos.type || 'Medical'} Emergency • {activeSos.timestamp ? formatDateTime(activeSos.timestamp) : 'Just now'}
+                </span>
+              </div>
+              <p className="text-sm font-bold text-white mt-1">
+                {activeSos.address || 'Live Citizen Location'}
+              </p>
+              {activeSos.notes && (
+                <p className="text-xs text-rose-200/80 mt-0.5 font-medium">
+                  "{activeSos.notes}"
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <Link
+              to="/map"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-900/40 transition-all"
+            >
+              <span>View on Live Map</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('ser_active_sos');
+                setActiveSos(null);
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white text-xs font-mono border border-slate-700 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

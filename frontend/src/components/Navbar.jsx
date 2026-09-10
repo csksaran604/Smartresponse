@@ -6,7 +6,9 @@ import {
   LogOut,
   User as UserIcon,
   Activity,
-  Cpu
+  Cpu,
+  Volume2,
+  Radio
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { notificationsApi, healthApi } from '../services/api';
@@ -87,9 +89,33 @@ export const Navbar = ({ setIsSidebarOpen }) => {
 
       {/* Right controls: Health Pill, Model Chip, Notifications, Profile */}
       <div className="flex items-center gap-3 sm:gap-4">
+        {/* Test Siren & Alert Modal Button */}
+        <button
+          type="button"
+          onClick={() => {
+            const testAlert = {
+              id: `TEST-${Date.now().toString().slice(-4)}`,
+              type: 'Medical',
+              latitude: 40.7306,
+              longitude: -73.9352,
+              address: 'Simulated Citizen Mobile SOS • Broadway & 8th St, NY',
+              notes: 'Diagnostic sound test: Verification of siren alarm and popup dispatch modal',
+              reporter_phone: '+1-555-TEST',
+              urgency: 'Critical',
+              timestamp: new Date().toISOString(),
+            };
+            window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: testAlert }));
+          }}
+          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono border border-slate-700 transition-colors"
+          title="Test Audio Siren Alarm & Emergency Modal"
+        >
+          <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+          <span>Test Alarm</span>
+        </button>
+
         {/* Citizen SOS Quick Action */}
         <Link
-          to="/citizen"
+          to="/sos"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs shadow-md shadow-rose-950 transition-all active:scale-95 animate-pulse"
         >
           <span>🚨 Citizen SOS</span>
