@@ -201,22 +201,24 @@ export const DashboardPage = () => {
               <Radio className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-black uppercase text-rose-300 font-mono tracking-wider">
-                  🚨 LIVE CITIZEN SOS SIGNAL
+                  🚨 {activeSos.type || 'Medical'} EMERGENCY
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  {activeSos.type || 'Medical'} Emergency • {activeSos.timestamp ? formatDateTime(activeSos.timestamp) : 'Just now'}
-                </span>
+                {(activeSos.reporter_phone || activeSos.phone) && (
+                  <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/30">
+                    📞 {activeSos.reporter_phone || activeSos.phone}
+                  </span>
+                )}
+                {activeSos.latitude && activeSos.longitude && (
+                  <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                    GPS: {Number(activeSos.latitude).toFixed(5)}, {Number(activeSos.longitude).toFixed(5)}
+                  </span>
+                )}
               </div>
               <p className="text-sm font-bold text-white mt-1">
-                {activeSos.address || 'Live Citizen Location'}
+                📍 {activeSos.address || 'Citizen Live Location'}
               </p>
-              {activeSos.notes && (
-                <p className="text-xs text-rose-200/80 mt-0.5 font-medium">
-                  "{activeSos.notes}"
-                </p>
-              )}
             </div>
           </div>
 
