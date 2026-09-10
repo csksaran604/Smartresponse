@@ -1,26 +1,74 @@
 import axios from 'axios';
+import { handleMockRequest } from './mockData';
+
+const isStandalone = () => {
+  // If an explicit backend URL is provided, connect to it
+  if (import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.trim() !== '') {
+    return false;
+  }
+  // When running on static cloud hosting (e.g. Vercel, Netlify) without backend
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (
+      host.includes('vercel.app') ||
+      host.includes('netlify.app') ||
+      host.includes('github.io') ||
+      (!host.includes('localhost') && !host.includes('127.0.0.1'))
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '',
   timeout: 30000,
 });
 
-// Request interceptor to attach JWT token
+// Request interceptor to attach JWT token or divert to mock engine if standalone
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('ser_token');
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
+
+    if (isStandalone()) {
+      config.adapter = () => handleMockRequest(config);
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle authentication expiry
+// Response interceptor to handle authentication expiry and fallback to mock engine
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
+  (response) => {
+    // Detect Vercel SPA rewrite fallback (status 200 but HTML string payload)
+    if (
+      typeof response.data === 'string' &&
+      (response.data.includes('<!doctype html') || response.data.includes('<html'))
+    ) {
+      return handleMockRequest(response.config);
+    }
+    return response;
+  },
+  async (error) => {
+    // If backend is unreachable or returns 404 / 405 / 502 / network error
+    if (
+      !error.response ||
+      error.response.status === 404 ||
+      error.response.status === 405 ||
+      error.response.status === 502 ||
+      error.response.status === 503 ||
+      error.code === 'ERR_NETWORK' ||
+      error.message?.includes('Network Error')
+    ) {
+      return handleMockRequest(error.config);
+    }
+
     if (error.response && error.response.status === 401) {
       // Clear token if expired or unauthorized
       if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
