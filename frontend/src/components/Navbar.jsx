@@ -93,18 +93,34 @@ export const Navbar = ({ setIsSidebarOpen }) => {
         <button
           type="button"
           onClick={() => {
-            const testAlert = {
-              id: `TEST-${Date.now().toString().slice(-4)}`,
-              type: 'Medical',
-              latitude: 40.7306,
-              longitude: -73.9352,
-              address: 'Simulated Citizen Mobile SOS • Broadway & 8th St, NY',
-              notes: 'Diagnostic sound test: Verification of siren alarm and popup dispatch modal',
-              reporter_phone: '+1-555-TEST',
-              urgency: 'Critical',
-              timestamp: new Date().toISOString(),
+            const fireTestEvent = (lat, lng, addr) => {
+              const testAlert = {
+                id: `TEST-${Date.now().toString().slice(-4)}`,
+                type: 'Medical',
+                latitude: lat,
+                longitude: lng,
+                address: addr || `Live Citizen SOS • ${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`,
+                notes: 'Diagnostic sound test: Verification of siren alarm, exact GPS atcharegai/thirkaregai, and popup dispatch modal',
+                reporter_phone: '+91-98765-TEST0',
+                urgency: 'Critical',
+                timestamp: new Date().toISOString(),
+              };
+              window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: testAlert }));
             };
-            window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: testAlert }));
+
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  fireTestEvent(pos.coords.latitude, pos.coords.longitude, `Live Tested GPS Position (±${Math.round(pos.coords.accuracy)}m)`);
+                },
+                () => {
+                  fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Anna Salai, Chennai');
+                },
+                { enableHighAccuracy: true, timeout: 5000 }
+              );
+            } else {
+              fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Anna Salai, Chennai');
+            }
           }}
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono border border-slate-700 transition-colors"
           title="Test Audio Siren Alarm & Emergency Modal"

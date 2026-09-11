@@ -23,6 +23,7 @@ class Accident(db.Model):
     response_status = db.Column(db.String(30), default='Pending')          # Pending, Unit Assigned, Dispatched, En Route, On Scene, Resolved, Cancelled
     assigned_unit_id = db.Column(db.Integer, db.ForeignKey('emergency_units.id'), nullable=True)
     reporter = db.Column(db.String(120), default='AI Vision System')
+    photo = db.Column(db.Text, nullable=True)
     verified_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     verified_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=utc_now)
@@ -56,6 +57,7 @@ class Accident(db.Model):
             'assigned_unit_id': self.assigned_unit_id,
             'assigned_unit': self.assigned_unit.to_dict() if self.assigned_unit else None,
             'reporter': self.reporter,
+            'photo': self.photo,
             'verified_by_id': self.verified_by_id,
             'verified_by_name': self.verified_by.full_name if self.verified_by else None,
             'verified_at': to_iso_utc(self.verified_at),

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -19,7 +19,13 @@ import {
   Lock,
   Crosshair,
   Layers,
-  Info
+  Info,
+  Camera,
+  CameraOff,
+  SwitchCamera,
+  Check,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
@@ -49,6 +55,32 @@ function MapRecenter({ coords }) {
   return null;
 }
 
+// Compress dataUrl to compact JPEG
+const compressImage = (dataUrl, maxWidth = 640, maxHeight = 480, quality = 0.65) => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      if (height > maxHeight) {
+        width = Math.round((width * maxHeight) / height);
+        height = maxHeight;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+};
+
 export const PublicSosPage = () => {
   const [coords, setCoords] = useState(null);
   const [address, setAddress] = useState('Acquiring high-precision GPS satellite fix...');
@@ -63,7 +95,17 @@ export const PublicSosPage = () => {
   const [sentDetails, setSentDetails] = useState(null);
   const [broadcasting, setBroadcasting] = useState(false);
 
-  // Reverse Geocoding via Nominatim
+  // Live Camera / Photo Capture State
+  const [cameraActive, setCameraActive] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
+  const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (front)
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const watchIdRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Reverse Geocoding via Nominatim with clean fallback
   const reverseGeocode = async (lat, lon) => {
     try {
       const res = await fetch(
@@ -77,10 +119,10 @@ export const PublicSosPage = () => {
     } catch (e) {
       console.warn('Geocoding error:', e);
     }
-    return `Latitude: ${lat.toFixed(5)}, Longitude: ${lon.toFixed(5)}`;
+    return `GPS Fix: ${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
   };
 
-  // Request high accuracy browser geolocation
+  // Request continuous high-accuracy browser geolocation
   const requestLocation = useCallback(() => {
     setLocating(true);
     setGpsError(null);
@@ -88,9 +130,8 @@ export const PublicSosPage = () => {
     if (!navigator.geolocation) {
       setGpsError('Geolocation is not supported by your device browser.');
       setLocating(false);
-      // Fallback coordinates
-      setCoords({ lat: 40.7589, lng: -73.9851, accuracy: 15 });
-      setAddress('Times Square, Manhattan, NY (Estimated)');
+      setCoords({ lat: 13.0827, lng: 80.2707, accuracy: 20 });
+      setAddress('Chennai, Tamil Nadu (Default Coordinates)');
       return;
     }
 
@@ -98,28 +139,149 @@ export const PublicSosPage = () => {
       async (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
         setCoords({ lat: latitude, lng: longitude, accuracy: Math.round(accuracy) });
+        setLocating(false);
         const resolvedAddress = await reverseGeocode(latitude, longitude);
         setAddress(resolvedAddress);
-        setLocating(false);
       },
       (err) => {
         setLocating(false);
         if (err.code === 1) {
           setGpsError('Location access was denied. Please allow GPS permission in your browser for dispatch accuracy.');
         } else {
-          setGpsError('GPS signal temporarily unavailable. Using approximate mobile network cell.');
+          setGpsError('GPS satellite signal acquiring... Using approximate mobile network cell.');
         }
-        // Fallback default coordinates
-        setCoords({ lat: 40.7589, lng: -73.9851, accuracy: 25 });
-        setAddress('Midtown District, New York, NY (Estimated GPS)');
+        setCoords({ lat: 13.0827, lng: 80.2707, accuracy: 30 });
+        setAddress('Live Location (Acquiring Satellites)');
       },
-      { enableHighAccuracy: true, timeout: 9000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+    );
+
+    // Watch position continuously to lock exact meter precision
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setCoords((prev) => ({
+          lat: latitude,
+          lng: longitude,
+          accuracy: Math.round(accuracy),
+        }));
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000 }
     );
   }, []);
 
   useEffect(() => {
     requestLocation();
+    return () => {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
   }, [requestLocation]);
+
+  // Start Live Device Camera Feed (with graceful fallbacks)
+  const startCamera = async (mode = facingMode) => {
+    setCameraError(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // Browser doesn't support direct getUserMedia (e.g. non-HTTPS) -> open phone native camera directly
+      fileInputRef.current?.click();
+      return;
+    }
+
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: mode } },
+        audio: false,
+      });
+    } catch (e1) {
+      try {
+        // Fallback: simple video: true without constraints
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch (e2) {
+        console.warn('Direct camera stream failed:', e2);
+        setCameraError('Camera access was blocked or unavailable. Opening phone camera app...');
+        fileInputRef.current?.click();
+        return;
+      }
+    }
+
+    if (stream) {
+      streamRef.current = stream;
+      setCameraActive(true);
+    }
+  };
+
+  // Safe video stream attachment once <video> is mounted in DOM
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      const vid = videoRef.current;
+      vid.srcObject = streamRef.current;
+      vid.onloadedmetadata = () => {
+        vid.play().catch((err) => console.warn('Video play error:', err));
+      };
+    }
+  }, [cameraActive]);
+
+  // Stop Camera
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  // Flip Camera (Front / Back)
+  const flipCamera = () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    startCamera(nextMode);
+  };
+
+  // Shutter Snapshot
+  const capturePhoto = async () => {
+    if (!videoRef.current) return;
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const rawDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const compressed = await compressImage(rawDataUrl, 640, 480, 0.65);
+      setCapturedPhoto(compressed);
+      stopCamera();
+    } catch (e) {
+      console.warn('Capture error:', e);
+    }
+  };
+
+  // Handle Native Phone Camera / File Input
+  const handleNativeFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const compressed = await compressImage(ev.target.result, 640, 480, 0.65);
+      setCapturedPhoto(compressed);
+      stopCamera();
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Handle SOS Button Click
   const handleSosPress = () => {
@@ -146,11 +308,12 @@ export const PublicSosPage = () => {
     setBroadcasting(true);
     const emergencyPayload = {
       emergencyType,
-      latitude: coords?.lat || 40.7589,
-      longitude: coords?.lng || -73.9851,
+      latitude: coords?.lat != null ? Number(coords.lat) : 13.0827,
+      longitude: coords?.lng != null ? Number(coords.lng) : 80.2707,
       address,
       notes: notes.trim(),
       phone: phone.trim() || 'Citizen Mobile Caller',
+      photo: capturedPhoto || null,
       urgency: 'Critical',
     };
 
@@ -167,6 +330,7 @@ export const PublicSosPage = () => {
         severity: 'Critical',
         reporter: emergencyPayload.phone,
         ai_confidence: 99.0,
+        photo: capturedPhoto || null,
       }).catch(() => {});
 
       setSosSent(true);
@@ -257,6 +421,25 @@ export const PublicSosPage = () => {
                 <span className="text-slate-400">DISPATCH STATUS:</span>
                 <span className="text-amber-400 font-bold animate-pulse">SIREN ACTIVE • EN ROUTE REVIEW</span>
               </div>
+
+              {sentDetails?.photo && (
+                <div className="pt-2 border-t border-slate-800 flex items-center gap-3">
+                  <img
+                    src={sentDetails.photo}
+                    alt="Transmitted accident proof"
+                    className="w-14 h-14 rounded-lg object-cover border border-emerald-500/50"
+                  />
+                  <div>
+                    <span className="text-[10px] text-emerald-400 font-bold block flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      LIVE CAMERA PROOF TRANSMITTED
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Photo delivered to operator terminal for rapid verification
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Direct Calling Hotline */}
@@ -426,6 +609,165 @@ export const PublicSosPage = () => {
                   ? 'Broadcasting in 3 seconds... Tap button again to abort.'
                   : 'Tap button to broadcast your live GPS to Emergency Dispatch HQ'}
               </p>
+            </div>
+
+            {/* 2.5 LIVE ACCIDENT CONFIRMATION CAMERA MODULE */}
+            <div className="rounded-2xl border-2 border-slate-800 bg-slate-900/90 overflow-hidden shadow-xl">
+              <div className="bg-slate-900 px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold font-mono text-white uppercase tracking-wider">
+                    Accident Confirmation Photo
+                  </span>
+                </div>
+                {capturedPhoto ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    PHOTO ATTACHED
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono text-amber-400 bg-amber-500/10 border border-amber-500/30">
+                    OPTIONAL PROOF
+                  </span>
+                )}
+              </div>
+
+              <div className="p-3.5 space-y-3">
+                {cameraActive ? (
+                  /* Live Camera Viewfinder */
+                  <div className="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-700">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
+
+                    {/* Viewfinder Target Reticle Overlay */}
+                    <div className="absolute inset-4 pointer-events-none border border-white/30 rounded-lg flex items-center justify-center">
+                      <div className="w-8 h-8 border-t-2 border-l-2 border-amber-400 absolute top-0 left-0" />
+                      <div className="w-8 h-8 border-t-2 border-r-2 border-amber-400 absolute top-0 right-0" />
+                      <div className="w-8 h-8 border-b-2 border-l-2 border-amber-400 absolute bottom-0 left-0" />
+                      <div className="w-8 h-8 border-b-2 border-r-2 border-amber-400 absolute bottom-0 right-0" />
+                      <span className="text-[10px] font-mono uppercase text-white/80 bg-black/50 px-2 py-0.5 rounded">
+                        Aim at accident scene
+                      </span>
+                    </div>
+
+                    {/* Camera Control Overlay */}
+                    <div className="absolute bottom-3 inset-x-0 flex items-center justify-center gap-4 z-10">
+                      <button
+                        type="button"
+                        onClick={flipCamera}
+                        className="p-2.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-white border border-slate-700 shadow-md transition-all active:scale-95"
+                        title="Flip Camera (Front/Back)"
+                      >
+                        <SwitchCamera className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={capturePhoto}
+                        className="p-3.5 rounded-full bg-red-600 hover:bg-red-500 text-white border-4 border-white shadow-2xl transition-all active:scale-90"
+                        title="Capture Photo Now"
+                      >
+                        <Camera className="w-6 h-6" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="p-2.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-700 shadow-md transition-all active:scale-95"
+                        title="Close Camera"
+                      >
+                        <CameraOff className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : capturedPhoto ? (
+                  /* Captured Photo Preview */
+                  <div className="space-y-2.5">
+                    <div className="relative rounded-xl overflow-hidden border-2 border-emerald-500/50 bg-black max-h-48 flex items-center justify-center">
+                      <img
+                        src={capturedPhoto}
+                        alt="Accident scene proof"
+                        className="w-full h-48 object-cover"
+                      />
+                      <div className="absolute top-2 left-2 px-2 py-1 rounded bg-black/70 text-[10px] font-mono text-emerald-300 flex items-center gap-1 backdrop-blur-sm">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Live Scene Attached</span>
+                      </div>
+                      <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-[9px] font-mono text-slate-300 backdrop-blur-sm">
+                        {coords ? `${coords.lat.toFixed(4)}°, ${coords.lng.toFixed(4)}°` : 'Live GPS'}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startCamera()}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-mono text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Retake Photo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCapturedPhoto(null)}
+                        className="py-1.5 px-3 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/40 text-xs font-mono flex items-center justify-center gap-1 transition-colors"
+                        title="Remove attached photo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Camera Actions - Take Live Photo or Upload */
+                  <div className="space-y-2">
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Snap a live camera photo of the vehicle collision or hazard to visually confirm urgency for arriving responders.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => startCamera()}
+                        className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95 font-mono"
+                      >
+                        <Camera className="w-4 h-4 text-slate-950" />
+                        <span>Take Live Photo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-medium flex items-center justify-center gap-1.5 transition-colors active:scale-95"
+                      >
+                        <ImageIcon className="w-4 h-4 text-sky-400" />
+                        <span>Snap / Upload</span>
+                      </button>
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleNativeFileUpload}
+                        className="hidden"
+                      />
+                    </div>
+
+                    {cameraError && (
+                      <p className="text-[11px] text-amber-300/90 font-mono mt-1">
+                        {cameraError}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 3. EMERGENCY TYPE SELECTOR */}

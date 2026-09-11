@@ -85,6 +85,7 @@ def create_accident():
     severity = data.get('severity', 'Medium')
     ai_confidence = data.get('ai_confidence', 0.0)
     reporter = data.get('reporter', user.full_name if user else 'Emergency Dispatcher')
+    photo = data.get('photo') or data.get('photo_url')
 
     if not address:
         address = f"Coordinates: {latitude:.4f}, {longitude:.4f}"
@@ -102,7 +103,8 @@ def create_accident():
         ai_confidence=float(ai_confidence),
         verification_status='Pending',
         response_status='Pending',
-        reporter=reporter
+        reporter=reporter,
+        photo=photo
     )
 
     db.session.add(accident)

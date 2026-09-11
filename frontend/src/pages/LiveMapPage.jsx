@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
+import { Link, useSearchParams } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
@@ -21,7 +21,9 @@ import {
   X,
   Radio,
   Layers,
-  Compass
+  Compass,
+  Camera,
+  Clock
 } from 'lucide-react';
 import { accidentsApi, unitsApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
@@ -192,6 +194,11 @@ export const LiveMapPage = () => {
   const [sosSuccess, setSosSuccess] = useState(null);
   const [spawningUnits, setSpawningUnits] = useState(false);
 
+  // Routing and Emergency Navigation State
+  const [searchParams] = useSearchParams();
+  const [activeRoute, setActiveRoute] = useState(null);
+  const [isRouting, setIsRouting] = useState(false);
+
   // Fetch Incidents and Units from API
   const fetchData = useCallback(async () => {
     try {
@@ -302,6 +309,75 @@ export const LiveMapPage = () => {
       }
     };
   }, [fetchData, locateUser]);
+
+  // Routing Function: Fetch OSRM Road Route from Responder to Destination
+  const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene') => {
+    const startLat = userLocation?.lat || mapCenter[0];
+    const startLng = userLocation?.lng || mapCenter[1];
+    setIsRouting(true);
+
+    const directDist = calculateDistance(startLat, startLng, destLat, destLng);
+    const directDuration = directDist ? Math.max(1, Math.round((parseFloat(directDist) / 35) * 60)) : 5;
+
+    try {
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+      const res = await fetch(osrmUrl);
+      const data = await res.json();
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+        setActiveRoute({
+          destination: [destLat, destLng],
+          origin: [startLat, startLng],
+          label: incidentLabel,
+          distanceKm: (route.distance / 1000).toFixed(1),
+          durationMins: Math.max(1, Math.round(route.duration / 60)),
+          positions,
+        });
+        setMapCenter([(startLat + destLat) / 2, (startLng + destLng) / 2]);
+        setMapZoom(14);
+      } else {
+        setActiveRoute({
+          destination: [destLat, destLng],
+          origin: [startLat, startLng],
+          label: incidentLabel,
+          distanceKm: directDist,
+          durationMins: directDuration,
+          positions: [[startLat, startLng], [destLat, destLng]],
+        });
+      }
+    } catch (err) {
+      console.warn('Live map route error:', err);
+      setActiveRoute({
+        destination: [destLat, destLng],
+        origin: [startLat, startLng],
+        label: incidentLabel,
+        distanceKm: directDist,
+        durationMins: directDuration,
+        positions: [[startLat, startLng], [destLat, destLng]],
+      });
+    } finally {
+      setIsRouting(false);
+    }
+  }, [userLocation, mapCenter]);
+
+  // Handle URL Query Params for auto-focusing on incoming alerts
+  useEffect(() => {
+    const focusLat = searchParams.get('focusLat');
+    const focusLng = searchParams.get('focusLng');
+    const route = searchParams.get('route');
+
+    if (focusLat && focusLng) {
+      const lat = parseFloat(focusLat);
+      const lng = parseFloat(focusLng);
+      setMapCenter([lat, lng]);
+      setMapZoom(16);
+
+      if (route === 'true') {
+        calculateRouteTo(lat, lng, 'Emergency SOS Incident');
+      }
+    }
+  }, [searchParams, calculateRouteTo]);
 
   // Spawn Demo Units Near User's Real Coordinates
   const spawnDemoUnitsNearMe = async () => {
@@ -648,6 +724,57 @@ export const LiveMapPage = () => {
       ) : (
         /* Interactive Google Maps Layer with Live Pins, Real-time GPS, & Dispatch Units */
         <div className="glass-panel p-2 rounded-2xl border border-slate-800 h-[620px] overflow-hidden shadow-2xl relative">
+          {/* Active Navigation Route HUD */}
+          {activeRoute && (
+            <div className="absolute top-4 left-4 z-[500] max-w-sm rounded-2xl bg-slate-900/95 border-2 border-sky-500 shadow-2xl p-3 text-white font-sans backdrop-blur-md animate-fadeIn">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Navigation className="w-4 h-4 text-sky-400 animate-pulse" />
+                  <span className="text-xs font-bold font-mono uppercase text-sky-300">
+                    Active Road Route
+                  </span>
+                </div>
+                <button
+                  onClick={() => setActiveRoute(null)}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                  title="Clear Route"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="py-2 space-y-1 text-xs">
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-slate-400">Target:</span>
+                  <span className="font-bold text-white truncate max-w-[170px]">{activeRoute.label}</span>
+                </div>
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-slate-400">Road Distance:</span>
+                  <span className="font-bold text-sky-400">{activeRoute.distanceKm} km</span>
+                </div>
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-slate-400">Estimated Drive:</span>
+                  <span className="font-bold text-amber-400 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    ~{activeRoute.durationMins} mins
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&origin=${activeRoute.origin[0]},${activeRoute.origin[1]}&destination=${activeRoute.destination[0]},${activeRoute.destination[1]}&travelmode=driving`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95"
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Turn-by-Turn GPS</span>
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* Floating Target and SOS Buttons on Map */}
           <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
             {userLocation && (
@@ -705,6 +832,19 @@ export const LiveMapPage = () => {
               subdomains={activeTile.subdomains}
               maxZoom={activeTile.maxZoom}
             />
+
+            {/* Active Navigation Route Polyline */}
+            {activeRoute && activeRoute.positions && (
+              <Polyline
+                positions={activeRoute.positions}
+                pathOptions={{
+                  color: '#0284c7',
+                  weight: 6,
+                  opacity: 0.9,
+                  dashArray: isRouting ? '8, 8' : undefined,
+                }}
+              />
+            )}
 
             {/* User's Live GPS Location Marker (Google Style Blue Pin) & Accuracy Circle */}
             {userLocation && (
@@ -794,6 +934,16 @@ export const LiveMapPage = () => {
 
                       <p className="text-slate-200 font-medium">{inc.address}</p>
 
+                      {inc.photo && (
+                        <div className="rounded-lg overflow-hidden border border-emerald-500/50 my-1.5 max-h-32 bg-black">
+                          <img
+                            src={inc.photo}
+                            alt="Accident scene photo"
+                            className="w-full h-32 object-cover"
+                          />
+                        </div>
+                      )}
+
                       <div className="text-[11px] font-mono text-slate-400 space-y-0.5">
                         {distFromUser && (
                           <p className="text-amber-300 font-semibold">Distance from you: {distFromUser} km</p>
@@ -802,6 +952,14 @@ export const LiveMapPage = () => {
                         <p>Status: {inc.response_status}</p>
                         <p>Reporter: {inc.reporter}</p>
                       </div>
+
+                      <button
+                        onClick={() => calculateRouteTo(inc.latitude, inc.longitude, inc.incident_id)}
+                        className="w-full py-1.5 px-2.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-[11px] font-bold font-mono flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Navigation className="w-3 h-3 text-sky-400" />
+                        <span>Draw Road Route from You</span>
+                      </button>
 
                       <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
                         <a

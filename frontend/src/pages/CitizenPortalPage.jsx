@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { accidentsApi, unitsApi, aiApi } from '../services/api';
+import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { formatDateTime } from '../utils/dateUtils';
 
 // Helper to compute distance
@@ -130,6 +131,8 @@ export const CitizenPortalPage = () => {
     loadData();
   }, [locateCitizen, loadData]);
 
+  const [base64Photo, setBase64Photo] = useState(null);
+
   // Handle Photo Selection
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -137,6 +140,13 @@ export const CitizenPortalPage = () => {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setBase64Photo(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+
     setAiAnalyzing(true);
 
     try {
@@ -204,13 +214,27 @@ export const CitizenPortalPage = () => {
         reporter: user?.full_name || 'Citizen (SOS App)',
         ai_confidence: aiResult ? aiResult.confidence_score : 98.0,
         detection_id: aiResult ? aiResult.id : null,
+        photo: base64Photo || null,
       };
+
+      // Broadcast to real-time emergency operator terminal
+      await broadcastEmergencySos({
+        type: emergencyType,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
+        address: payload.address,
+        notes: payload.description,
+        phone: user?.phone || user?.full_name || 'Citizen Portal User',
+        photo: base64Photo || null,
+        urgency,
+      }).catch(() => {});
 
       const res = await accidentsApi.createAccident(payload);
       setSosSent(res.data.accident);
       setNotes('');
       setSelectedFile(null);
       setPreviewUrl(null);
+      setBase64Photo(null);
       setAiResult(null);
       loadData();
     } catch (err) {
@@ -403,9 +427,20 @@ export const CitizenPortalPage = () => {
 
             {/* Photo upload */}
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 cursor-pointer transition-colors">
-                <Camera className="w-4 h-4 text-sky-400" />
-                <span>{selectedFile ? 'Change Photo' : 'Upload Incident Photo'}</span>
+              <label className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-xs font-bold text-slate-950 cursor-pointer shadow-md transition-all active:scale-95 font-mono">
+                <Camera className="w-4 h-4 text-slate-950" />
+                <span>{selectedFile ? 'Retake Photo' : '📸 Take Photo (Camera)'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+              </label>
+
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 cursor-pointer transition-colors font-mono">
+                <span>Upload File</span>
                 <input
                   type="file"
                   accept="image/*"

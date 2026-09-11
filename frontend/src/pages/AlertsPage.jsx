@@ -10,17 +10,25 @@ import {
   Clock,
   Radio,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  MapPin,
+  Navigation,
+  Camera,
+  Compass,
+  X,
+  ZoomIn
 } from 'lucide-react';
-import { notificationsApi } from '../services/api';
+import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
 
 export const AlertsPage = () => {
   const [notifications, setNotifications] = useState([]);
+  const [incidentsMap, setIncidentsMap] = useState({});
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filterSeverity, setFilterSeverity] = useState('');
   const [filterUnreadOnly, setFilterUnreadOnly] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -29,9 +37,21 @@ export const AlertsPage = () => {
       if (filterSeverity) params.severity = filterSeverity;
       if (filterUnreadOnly) params.unread = true;
 
-      const res = await notificationsApi.getNotifications(params);
-      setNotifications(res.data.notifications || []);
-      setUnreadCount(res.data.unread_count || 0);
+      const [notifRes, incRes] = await Promise.all([
+        notificationsApi.getNotifications(params),
+        accidentsApi.getAccidents({ per_page: 100 }).catch(() => ({ data: { accidents: [] } }))
+      ]);
+
+      const notifs = notifRes.data.notifications || [];
+      const accs = incRes.data?.accidents || [];
+      const accMap = {};
+      for (const a of accs) {
+        accMap[a.id] = a;
+        if (a.incident_id) accMap[a.incident_id] = a;
+      }
+      setIncidentsMap(accMap);
+      setNotifications(notifs);
+      setUnreadCount(notifRes.data.unread_count || 0);
     } catch (e) {
       console.error(e);
     } finally {
@@ -74,7 +94,7 @@ export const AlertsPage = () => {
             Emergency Alert Center
           </h1>
           <p className="text-xs text-slate-400 font-mono mt-0.5">
-            Real-time in-app notification dispatch log for AI detections and tactical escalations
+            Real-time in-app notification dispatch log for AI detections, Citizen SOS, and tactical escalations
           </p>
         </div>
 
@@ -82,6 +102,7 @@ export const AlertsPage = () => {
           <button
             onClick={fetchAlerts}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+            title="Refresh alerts"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -138,99 +159,245 @@ export const AlertsPage = () => {
             No alerts matching the selected filters.
           </div>
         ) : (
-          notifications.map((n) => (
-            <div
-              key={n.id}
-              className={`glass-panel p-4 rounded-xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-                n.is_read
-                  ? 'border-slate-800/60 opacity-70 bg-slate-900/30'
-                  : n.severity === 'critical'
-                  ? 'border-rose-500/40 bg-rose-500/5 shadow-md shadow-rose-950/20'
-                  : n.severity === 'warning'
-                  ? 'border-amber-500/30 bg-amber-500/5'
-                  : 'border-slate-800 bg-slate-900/60'
-              }`}
-            >
-              <div className="flex items-start gap-3 min-w-0">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-                    n.severity === 'critical'
-                      ? 'bg-rose-500/20 text-rose-400'
-                      : n.severity === 'warning'
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'bg-indigo-500/20 text-indigo-400'
-                  }`}
-                >
-                  {n.severity === 'critical' ? (
-                    <Flame className="w-5 h-5" />
-                  ) : n.severity === 'warning' ? (
-                    <AlertTriangle className="w-5 h-5" />
+          notifications.map((n) => {
+            // Cross-reference linked incident
+            const linkedIncident = n.incident_id ? incidentsMap[n.incident_id] : (n.incident_code ? incidentsMap[n.incident_code] : null);
+
+            let matchedInc = linkedIncident;
+            if (!matchedInc && (n.title || n.message)) {
+              const match = (n.title + ' ' + n.message).match(/INC-\d{4}-\w+/i);
+              if (match && incidentsMap[match[0]]) {
+                matchedInc = incidentsMap[match[0]];
+              }
+            }
+
+            const lat = n.latitude != null ? Number(n.latitude) : (matchedInc?.latitude != null ? Number(matchedInc.latitude) : null);
+            const lng = n.longitude != null ? Number(n.longitude) : (matchedInc?.longitude != null ? Number(matchedInc.longitude) : null);
+            const address = n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : 'Reported Citizen Location');
+            const photo = n.photo || matchedInc?.photo || null;
+
+            return (
+              <div
+                key={n.id}
+                className={`glass-panel p-4 sm:p-5 rounded-2xl border transition-all flex flex-col gap-3 ${
+                  n.is_read
+                    ? 'border-slate-800/60 opacity-75 bg-slate-900/30'
+                    : n.severity === 'critical'
+                    ? 'border-rose-500/50 bg-rose-500/5 shadow-lg shadow-rose-950/30'
+                    : n.severity === 'warning'
+                    ? 'border-amber-500/40 bg-amber-500/5'
+                    : 'border-slate-800 bg-slate-900/60'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                        n.severity === 'critical'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 animate-pulse'
+                          : n.severity === 'warning'
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                      }`}
+                    >
+                      {n.severity === 'critical' ? (
+                        <Flame className="w-5 h-5" />
+                      ) : n.severity === 'warning' ? (
+                        <AlertTriangle className="w-5 h-5" />
+                      ) : (
+                        <Radio className="w-5 h-5" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-black text-white tracking-wide font-mono">{n.title}</h3>
+                        <span
+                          className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded border font-bold ${
+                            n.severity === 'critical'
+                              ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                              : n.severity === 'warning'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                          }`}
+                        >
+                          {n.severity || 'Critical'}
+                        </span>
+                        {!n.is_read && (
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed font-sans">{n.message}</p>
+                    </div>
+                  </div>
+
+                  {/* Top Action Buttons */}
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {(n.incident_id || matchedInc?.id) && (
+                      <Link
+                        to={`/incidents/${n.incident_id || matchedInc?.id}`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors font-mono"
+                      >
+                        <span>Dossier</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </Link>
+                    )}
+
+                    {!n.is_read && (
+                      <button
+                        onClick={() => handleMarkRead(n.id)}
+                        className="p-1.5 rounded-xl bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 text-slate-400 border border-slate-700 transition-colors"
+                        title="Mark as read"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Exact Location & Coordinates Badge (atcharegai & thirkaregai) */}
+                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2">
+                  <div className="flex items-start gap-2.5 text-xs">
+                    <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5 animate-bounce" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] uppercase font-mono text-slate-400 block font-bold tracking-wider">
+                        துல்லியமான இடம் (EXACT LOCATION):
+                      </span>
+                      <span className="text-slate-200 font-semibold text-xs block leading-snug mt-0.5">
+                        {address}
+                      </span>
+                    </div>
+                  </div>
+
+                  {lat != null && lng != null ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-850 text-xs font-mono">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1.5 text-emerald-400 font-bold bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-500/30 shadow-sm">
+                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>அட்சரேகை (Lat): {lat.toFixed(5)}° N</span>
+                          <span className="text-slate-600">|</span>
+                          <span>தீர்க்கரேகை (Lng): {lng.toFixed(5)}° E</span>
+                        </div>
+                      </div>
+
+                      <Link
+                        to={`/map?focusLat=${lat}&focusLng=${lng}&route=true`}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold font-mono transition-all"
+                      >
+                        <Compass className="w-3.5 h-3.5 text-sky-400" />
+                        <span>வழித்தடம் காண்க (View Route & Map) &rarr;</span>
+                      </Link>
+                    </div>
                   ) : (
-                    <Radio className="w-5 h-5" />
+                    <div className="pt-2 border-t border-slate-850 text-[11px] font-mono text-slate-400 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Navigation className="w-3.5 h-3.5 text-slate-500" />
+                        <span>அட்சரேகை, தீர்க்கரேகை: Satellite GPS fix acquired</span>
+                      </span>
+                      <Link
+                        to="/map"
+                        className="text-sky-400 hover:underline text-[11px] font-mono"
+                      >
+                        Open Live Map &rarr;
+                      </Link>
+                    </div>
                   )}
                 </div>
 
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-xs font-bold text-white tracking-wide">{n.title}</h3>
-                    <span
-                      className={`text-[9px] uppercase font-mono px-1.5 py-0.2 rounded border font-bold ${
-                        n.severity === 'critical'
-                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                          : n.severity === 'warning'
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                          : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                      }`}
+                {/* Attached Live Scene Photo Proof */}
+                {photo && (
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-950/70 border-2 border-emerald-500/40">
+                    <div
+                      className="relative w-20 h-16 rounded-lg overflow-hidden border border-emerald-500/60 shrink-0 cursor-pointer group bg-black"
+                      onClick={() => setSelectedPhoto(photo)}
+                      title="Click to enlarge accident photo"
                     >
-                      {n.severity}
-                    </span>
-                    {!n.is_read && (
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                    )}
-                  </div>
+                      <img
+                        src={photo}
+                        alt="Accident scene proof"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                        <ZoomIn className="w-4 h-4 text-white" />
+                      </div>
+                    </div>
 
-                  <p className="text-xs text-slate-300 mt-1">{n.message}</p>
-
-                  <div className="flex items-center gap-3 mt-1.5 text-[10px] font-mono text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-500" />
-                      {formatDateTime(n.created_at)}
-                    </span>
-                    {n.incident_code && (
-                      <span className="text-rose-400 font-bold">
-                        Ref: {n.incident_code}
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                        <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                        விபத்து நேரலை புகைப்படம் (Live Camera Photo Attached)
                       </span>
-                    )}
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        User captured live camera evidence during SOS transmission for fast verification.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPhoto(photo)}
+                        className="text-[11px] text-sky-400 hover:text-sky-300 underline font-mono mt-0.5 font-semibold"
+                      >
+                        Click to view full photo &rarr;
+                      </button>
+                    </div>
                   </div>
+                )}
+
+                {/* Footer Time & Code */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-850">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-500" />
+                    {formatDateTime(n.created_at)}
+                  </span>
+                  {(n.incident_code || matchedInc?.incident_id) && (
+                    <span className="text-rose-400 font-bold">
+                      Ref: {n.incident_code || matchedInc?.incident_id}
+                    </span>
+                  )}
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                {n.incident_id && (
-                  <Link
-                    to={`/incidents/${n.incident_id}`}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700 transition-colors"
-                  >
-                    <span>View Incident</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </Link>
-                )}
-
-                {!n.is_read && (
-                  <button
-                    onClick={() => handleMarkRead(n.id)}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 text-slate-400 border border-slate-700 transition-colors"
-                    title="Mark as read"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
+
+      {/* Photo Lightbox Preview Modal */}
+      {selectedPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-fadeIn">
+          <div className="relative max-w-2xl w-full bg-slate-900 rounded-3xl border-2 border-emerald-500/60 overflow-hidden shadow-2xl">
+            <div className="p-4 bg-slate-850 flex items-center justify-between border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm text-white font-mono uppercase">
+                  Accident Scene Photo Evidence (விபத்து நேரலை புகைப்படம்)
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedPhoto(null)}
+                className="p-1.5 rounded-xl bg-slate-800 text-white hover:bg-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 flex items-center justify-center bg-black max-h-[75vh]">
+              <img
+                src={selectedPhoto}
+                alt="Accident scene full view"
+                className="max-h-[70vh] w-auto object-contain rounded-xl"
+              />
+            </div>
+
+            <div className="p-3 bg-slate-850 border-t border-slate-700 flex justify-end">
+              <button
+                onClick={() => setSelectedPhoto(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs font-mono"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

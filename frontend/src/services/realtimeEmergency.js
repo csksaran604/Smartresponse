@@ -18,22 +18,33 @@ const processedAlertIds = new Set();
 export async function broadcastEmergencySos(alertData) {
   const payload = {
     id: alertData.id || `SOS-${Date.now().toString().slice(-6)}`,
-    type: alertData.emergencyType || 'Medical',
-    latitude: alertData.latitude || 40.7589,
-    longitude: alertData.longitude || -73.9851,
-    address: alertData.address || `GPS: ${alertData.latitude?.toFixed(5)}, ${alertData.longitude?.toFixed(5)}`,
+    type: alertData.emergencyType || alertData.type || 'Medical',
+    latitude: alertData.latitude != null ? Number(alertData.latitude) : 13.0827,
+    longitude: alertData.longitude != null ? Number(alertData.longitude) : 80.2707,
+    address: alertData.address || `GPS: ${Number(alertData.latitude || 13.0827).toFixed(5)}, ${Number(alertData.longitude || 80.2707).toFixed(5)}`,
     notes: alertData.notes || 'Emergency assistance requested via citizen mobile portal',
     urgency: alertData.urgency || 'Critical',
-    reporter_phone: alertData.phone || 'Citizen Mobile Caller',
+    reporter_phone: alertData.phone || alertData.reporter_phone || 'Citizen Mobile Caller',
+    photo: alertData.photo || alertData.photo_url || null,
     timestamp: new Date().toISOString(),
-    source: 'PUBLIC_MOBILE_SOS',
+    source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
   // Remember our own sent alert so we don't alarm ourselves on the same phone
   processedAlertIds.add(payload.id);
 
   try {
-    // Send as JSON body directly so subscriber gets complete payload
+    // If there is a photo, save it to local storage as well for fast retrieval
+    if (payload.photo) {
+      try {
+        localStorage.setItem(`ser_sos_photo_${payload.id}`, payload.photo);
+        localStorage.setItem('ser_latest_sos_photo', payload.photo);
+      } catch (e) {
+        console.warn('Could not cache photo to localStorage:', e);
+      }
+    }
+
+    // Send payload over ntfy cloud relay
     const res = await fetch(PUBLISH_URL, {
       method: 'POST',
       headers: {
@@ -88,14 +99,24 @@ function parseRawMessage(raw) {
     parsed = {
       id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
       type: (raw.title || raw.message || '').includes('POLICE') ? 'Police' : (raw.title || raw.message || '').includes('FIRE') ? 'Fire' : 'Medical',
-      latitude: 40.7589,
-      longitude: -73.9851,
+      latitude: 13.0827,
+      longitude: 80.2707,
       address: raw.message || 'Live GPS Distress Location',
       notes: raw.message || '',
       urgency: 'Critical',
       reporter_phone: 'Citizen Mobile Caller',
       timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
     };
+  }
+
+  // Attach cached photo if available in current browser session
+  if (parsed && !parsed.photo) {
+    try {
+      const cached = localStorage.getItem(`ser_sos_photo_${parsed.id}`) || localStorage.getItem('ser_latest_sos_photo');
+      if (cached) {
+        parsed.photo = cached;
+      }
+    } catch {}
   }
 
   return parsed;

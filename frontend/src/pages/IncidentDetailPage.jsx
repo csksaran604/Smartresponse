@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   Send,
-  Radio
+  Radio,
+  Camera
 } from 'lucide-react';
 import { accidentsApi, unitsApi, assignmentsApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
@@ -253,6 +254,33 @@ export const IncidentDetailPage = () => {
                 <span>Model: {incident.detection.model_version}</span>
                 <span>Inference Time: {incident.detection.inference_time_ms}ms</span>
               </div>
+            </div>
+          )}
+
+          {/* Citizen Live Camera Proof */}
+          {incident.photo && (
+            <div className="glass-panel p-6 rounded-2xl border-2 border-emerald-500/40 space-y-3 shadow-lg">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <h3 className="text-xs font-bold text-emerald-300 uppercase font-mono tracking-wider flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-emerald-400" />
+                  Citizen Live Camera Proof
+                </h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  VERIFIED SCENE PHOTO
+                </span>
+              </div>
+
+              <div className="rounded-xl overflow-hidden bg-black max-h-96 flex items-center justify-center border border-slate-700">
+                <img
+                  src={incident.photo}
+                  alt="Citizen Live Photo Evidence"
+                  className="w-full h-auto max-h-96 object-contain"
+                />
+              </div>
+
+              <p className="text-[11px] font-mono text-slate-400">
+                Live camera snapshot captured by citizen during emergency broadcast.
+              </p>
             </div>
           )}
         </div>

@@ -485,19 +485,27 @@ export async function handleMockRequest(config) {
       response_status: 'Pending',
       assigned_unit_id: null,
       reporter: body?.reporter || 'Citizen / Camera Telemetry',
+      photo: body?.photo || body?.photo_url || null,
     };
 
     incidents.unshift(newInc);
     mockDb.saveIncidents(incidents);
 
-    // Add alert notification
+    // Add alert notification with full coordinates (atcharegai / thirkaregai) and photo
     const notifs = mockDb.getNotifications();
     notifs.unshift({
       id: Date.now(),
       title: `${newInc.severity.toUpperCase()}: ${newInc.incident_id} Reported`,
       message: `${newInc.address} - ${newInc.description.slice(0, 80)}...`,
       type: newInc.severity === 'Critical' ? 'Critical' : 'Warning',
+      severity: newInc.severity.toLowerCase(),
       is_read: false,
+      latitude: newInc.latitude,
+      longitude: newInc.longitude,
+      address: newInc.address,
+      incident_id: newInc.id,
+      incident_code: newInc.incident_id,
+      photo: newInc.photo,
       created_at: new Date().toISOString(),
     });
     mockDb.saveNotifications(notifs);
