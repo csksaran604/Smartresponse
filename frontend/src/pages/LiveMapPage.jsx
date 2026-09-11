@@ -136,6 +136,24 @@ const createCustomIcon = (color, text, isUnit = false) => {
   });
 };
 
+// Global memoized icon cache to prevent Leaflet from re-instantiating icons on every frame
+const iconCache = {};
+const getCachedIcon = (color, text, isUnit = false) => {
+  const key = `${color}_${text}_${isUnit}`;
+  if (!iconCache[key]) {
+    iconCache[key] = createCustomIcon(color, text, isUnit);
+  }
+  return iconCache[key];
+};
+
+let cachedUserLocationIcon = null;
+const getUserLocationIcon = () => {
+  if (!cachedUserLocationIcon) {
+    cachedUserLocationIcon = createGoogleUserLocationIcon();
+  }
+  return cachedUserLocationIcon;
+};
+
 const SEVERITY_PIN_COLORS = {
   Critical: '#ea4335', // Google Red
   High: '#fa7b17',     // Google Orange
@@ -149,17 +167,23 @@ const UNIT_PIN_COLORS = {
   'Fire & Rescue': '#d93025', // Deep Red
 };
 
-// Map controller component for smooth flying
+// Map controller component for smooth, non-laggy camera centering
 function MapController({ targetCenter, targetZoom }) {
   const map = useMap();
+  const lastCenterRef = useRef(null);
+
   useEffect(() => {
-    if (targetCenter && targetCenter[0] && targetCenter[1]) {
-      map.flyTo(targetCenter, targetZoom || 15, {
-        duration: 1.5,
-        easeLinearity: 0.25,
-      });
+    if (!targetCenter || !targetCenter[0] || !targetCenter[1]) return;
+    const [lat, lng] = targetCenter;
+    const last = lastCenterRef.current;
+
+    // Only update camera if coordinates moved meaningfully to avoid continuous re-rendering lag
+    if (!last || Math.abs(last[0] - lat) > 0.001 || Math.abs(last[1] - lng) > 0.001) {
+      lastCenterRef.current = [lat, lng];
+      map.setView([lat, lng], targetZoom || map.getZoom());
     }
   }, [targetCenter, targetZoom, map]);
+
   return null;
 }
 
@@ -761,16 +785,17 @@ export const LiveMapPage = () => {
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&origin=${activeRoute.origin[0]},${activeRoute.origin[1]}&destination=${activeRoute.destination[0]},${activeRoute.destination[1]}&travelmode=driving`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-1.5 px-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-mono font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-md transition-all active:scale-95"
+              <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono">
+                <span className="text-sky-400 font-bold flex items-center gap-1">
+                  <Navigation className="w-3.5 h-3.5" />
+                  Live Route Active
+                </span>
+                <button
+                  onClick={() => setActiveRoute(null)}
+                  className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-[10px] transition-colors"
                 >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>Turn-by-Turn GPS</span>
-                </a>
+                  Clear Route
+                </button>
               </div>
             </div>
           )}
@@ -861,7 +886,7 @@ export const LiveMapPage = () => {
                 />
                 <Marker
                   position={[userLocation.lat, userLocation.lng]}
-                  icon={createGoogleUserLocationIcon()}
+                  icon={getUserLocationIcon()}
                 >
                   <Popup>
                     <div className="space-y-2 font-sans p-1 text-xs">
@@ -913,7 +938,7 @@ export const LiveMapPage = () => {
             {/* Incident Markers */}
             {filteredIncidents.map((inc) => {
               const color = SEVERITY_PIN_COLORS[inc.severity] || '#ea4335';
-              const icon = createCustomIcon(color, inc.severity[0], false);
+              const icon = getCachedIcon(color, inc.severity[0], false);
               const distFromUser = userLocation
                 ? calculateDistance(userLocation.lat, userLocation.lng, inc.latitude, inc.longitude)
                 : null;
@@ -988,7 +1013,7 @@ export const LiveMapPage = () => {
             {/* Emergency Unit Markers */}
             {filteredUnits.map((u) => {
               const color = UNIT_PIN_COLORS[u.type] || '#1a73e8';
-              const icon = createCustomIcon(color, u.unit_id.split('-')[0], true);
+              const icon = getCachedIcon(color, u.unit_id.split('-')[0], true);
               const distFromUser = userLocation
                 ? calculateDistance(userLocation.lat, userLocation.lng, u.latitude, u.longitude)
                 : null;

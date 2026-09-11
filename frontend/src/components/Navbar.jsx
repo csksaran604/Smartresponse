@@ -100,7 +100,7 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                 latitude: lat,
                 longitude: lng,
                 address: addr || `Live Citizen SOS • ${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`,
-                notes: 'Diagnostic sound test: Verification of siren alarm, exact GPS atcharegai/thirkaregai, and popup dispatch modal',
+                notes: 'Diagnostic sound test: Verification of siren alarm and popup dispatch modal',
                 reporter_phone: '+91-98765-TEST0',
                 urgency: 'Critical',
                 timestamp: new Date().toISOString(),
@@ -110,16 +110,34 @@ export const Navbar = ({ setIsSidebarOpen }) => {
 
             if (navigator.geolocation) {
               navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                  fireTestEvent(pos.coords.latitude, pos.coords.longitude, `Live Tested GPS Position (±${Math.round(pos.coords.accuracy)}m)`);
+                async (pos) => {
+                  const lat = pos.coords.latitude;
+                  const lng = pos.coords.longitude;
+                  let resolvedAddr = `Live Tested GPS Position (±${Math.round(pos.coords.accuracy)}m)`;
+                  try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+                    if (res.ok) {
+                      const data = await res.json();
+                      const parts = [
+                        data.address?.road || data.address?.suburb || data.address?.neighbourhood,
+                        data.address?.city || data.address?.town || data.address?.state_district,
+                      ].filter(Boolean);
+                      if (parts.length > 0) {
+                        resolvedAddr = `Live Tested Citizen SOS • ${parts.join(', ')}`;
+                      } else if (data.display_name) {
+                        resolvedAddr = `Live Tested Citizen SOS • ${data.display_name.split(',').slice(0, 2).join(',')}`;
+                      }
+                    }
+                  } catch {}
+                  fireTestEvent(lat, lng, resolvedAddr);
                 },
                 () => {
-                  fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Anna Salai, Chennai');
+                  fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Current Device Location');
                 },
-                { enableHighAccuracy: true, timeout: 5000 }
+                { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
               );
             } else {
-              fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Anna Salai, Chennai');
+              fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Current Device Location');
             }
           }}
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono border border-slate-700 transition-colors"

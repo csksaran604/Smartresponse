@@ -54,11 +54,17 @@ const responderMarkerIcon = L.divIcon({
 // Auto fit both responder and accident location
 function RouteBoundsFitter({ bounds }) {
   const map = useMap();
+  const lastBoundsKeyRef = useRef(null);
+
   useEffect(() => {
     if (bounds && bounds.length === 2 && bounds[0] && bounds[1]) {
-      try {
-        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
-      } catch {}
+      const key = `${Number(bounds[0][0]).toFixed(4)}_${Number(bounds[0][1]).toFixed(4)}_${Number(bounds[1][0]).toFixed(4)}_${Number(bounds[1][1]).toFixed(4)}`;
+      if (lastBoundsKeyRef.current !== key) {
+        lastBoundsKeyRef.current = key;
+        try {
+          map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16, animate: false });
+        } catch {}
+      }
     }
   }, [bounds, map]);
   return null;
