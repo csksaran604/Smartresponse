@@ -477,25 +477,24 @@ export const EmergencyAlertModal = () => {
                 </div>
               </div>
 
-              {/* 1-Tap Google Maps Turn-by-Turn Navigation Button */}
+              {/* Internal SER Live Map Road Navigation */}
               <div className="p-2.5 bg-slate-850 border-t border-slate-700 flex items-center justify-between gap-2">
-                <div className="text-[11px] font-mono text-slate-300">
+                <div className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                  <Navigation className="w-3.5 h-3.5 text-sky-400" />
                   <span>En Route from your live GPS to scene</span>
                 </div>
 
                 <a
-                  href={googleMapsDirectionsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`/map?focusLat=${userLat}&focusLng=${userLng}&route=true`}
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs font-mono flex items-center gap-1.5 shadow-md transition-all active:scale-95"
                 >
-                  <Compass className="w-3.5 h-3.5" />
-                  <span>Start Turn-by-Turn GPS &rarr;</span>
+                  <MapPin className="w-3.5 h-3.5" />
+                  <span>View Route on SER Map &rarr;</span>
                 </a>
               </div>
             </div>
 
-            {/* 4. CITIZEN EXACT LOCATION (HIGH-PRECISION GPS) */}
+            {/* 4. CITIZEN ACCIDENT LOCATION (PLACE ONLY) */}
             <div className="p-3.5 rounded-2xl bg-slate-800/90 border border-slate-700/80 space-y-2">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0 mt-0.5">
@@ -503,10 +502,10 @@ export const EmergencyAlertModal = () => {
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">
-                    ACCIDENT SCENE / ADDRESS
+                    விபத்து இடம் / துல்லியமான முகவரி (LOCATION)
                   </span>
                   <p className="text-xs font-semibold text-slate-200 mt-0.5 leading-snug">
-                    {activeAlert.address || 'Live Citizen GPS Location'}
+                    {activeAlert.address || 'Live Citizen Location'}
                   </p>
                   {activeAlert.notes && activeAlert.notes !== activeAlert.address && (
                     <p className="text-[11px] text-amber-300/90 mt-1 font-mono italic">
@@ -514,13 +513,6 @@ export const EmergencyAlertModal = () => {
                     </p>
                   )}
                 </div>
-              </div>
-
-              <div className="pt-2 border-t border-slate-700/80 flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400 text-[10px] uppercase">EXACT GPS COORDINATES:</span>
-                <span className="font-bold text-emerald-400">
-                  {exactLat && exactLng ? `${exactLat}° N, ${exactLng}° E` : 'Live Satellite Fix'}
-                </span>
               </div>
             </div>
 

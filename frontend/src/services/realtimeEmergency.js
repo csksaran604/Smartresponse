@@ -13,19 +13,88 @@ const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=60s`;
 const processedAlertIds = new Set();
 
 /**
+ * Uploads citizen captured photo to cloud relay file hosting
+ * and returns direct public image URL
+ */
+async function uploadPhotoToCloud(photo) {
+  if (!photo) return null;
+  if (typeof photo === 'string' && (photo.startsWith('http://') || photo.startsWith('https://'))) {
+    return photo;
+  }
+  try {
+    let blob = null;
+    if (typeof photo === 'string' && photo.startsWith('data:')) {
+      const parts = photo.split(',');
+      const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: mime });
+    } else if (photo instanceof Blob) {
+      blob = photo;
+    }
+
+    if (!blob) return null;
+
+    const res = await fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}_uploads`, {
+      method: 'PUT',
+      headers: {
+        Filename: `sos_${Date.now()}.jpg`,
+        Title: 'Citizen SOS Accident Photo',
+      },
+      body: blob,
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.attachment?.url) {
+        return data.attachment.url;
+      }
+    }
+  } catch (err) {
+    console.warn('Photo cloud relay upload error:', err);
+  }
+  return null;
+}
+
+/**
  * Broadcasts an SOS alert from any mobile phone or computer to all listening operators
  */
 export async function broadcastEmergencySos(alertData) {
+  // Always cache local photo immediately in current browser
+  const rawPhoto = alertData.photo || alertData.photo_url || null;
+  const alertId = alertData.id || `SOS-${Date.now().toString().slice(-6)}`;
+
+  if (rawPhoto) {
+    try {
+      localStorage.setItem(`ser_sos_photo_${alertId}`, rawPhoto);
+      localStorage.setItem('ser_latest_sos_photo', rawPhoto);
+    } catch (e) {
+      console.warn('Could not cache photo locally:', e);
+    }
+  }
+
+  // Upload photo to cloud file relay to get a small URL that fits ntfy 4KB payload limit
+  let photoUrl = null;
+  if (rawPhoto) {
+    try {
+      photoUrl = await uploadPhotoToCloud(rawPhoto);
+    } catch {}
+  }
+
   const payload = {
-    id: alertData.id || `SOS-${Date.now().toString().slice(-6)}`,
+    id: alertId,
     type: alertData.emergencyType || alertData.type || 'Medical',
     latitude: alertData.latitude != null ? Number(alertData.latitude) : 13.0827,
     longitude: alertData.longitude != null ? Number(alertData.longitude) : 80.2707,
-    address: alertData.address || `GPS: ${Number(alertData.latitude || 13.0827).toFixed(5)}, ${Number(alertData.longitude || 80.2707).toFixed(5)}`,
+    address: alertData.address || `Live Citizen GPS Location`,
     notes: alertData.notes || 'Emergency assistance requested via citizen mobile portal',
     urgency: alertData.urgency || 'Critical',
     reporter_phone: alertData.phone || alertData.reporter_phone || 'Citizen Mobile Caller',
-    photo: alertData.photo || alertData.photo_url || null,
+    photo: photoUrl || (rawPhoto && rawPhoto.length < 2000 ? rawPhoto : null),
     timestamp: new Date().toISOString(),
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
@@ -34,17 +103,7 @@ export async function broadcastEmergencySos(alertData) {
   processedAlertIds.add(payload.id);
 
   try {
-    // If there is a photo, save it to local storage as well for fast retrieval
-    if (payload.photo) {
-      try {
-        localStorage.setItem(`ser_sos_photo_${payload.id}`, payload.photo);
-        localStorage.setItem('ser_latest_sos_photo', payload.photo);
-      } catch (e) {
-        console.warn('Could not cache photo to localStorage:', e);
-      }
-    }
-
-    // Send payload over ntfy cloud relay
+    // Send lightweight JSON payload over ntfy cloud relay
     const res = await fetch(PUBLISH_URL, {
       method: 'POST',
       headers: {
@@ -61,8 +120,8 @@ export async function broadcastEmergencySos(alertData) {
 
     // Also persist in local storage as current active SOS
     try {
-      localStorage.setItem('ser_active_sos', JSON.stringify(payload));
-      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
+      localStorage.setItem('ser_active_sos', JSON.stringify({ ...payload, photo: rawPhoto || photoUrl }));
+      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: { ...payload, photo: rawPhoto || photoUrl } }));
     } catch {}
 
     return { success: true, payload };
@@ -101,7 +160,7 @@ function parseRawMessage(raw) {
       type: (raw.title || raw.message || '').includes('POLICE') ? 'Police' : (raw.title || raw.message || '').includes('FIRE') ? 'Fire' : 'Medical',
       latitude: 13.0827,
       longitude: 80.2707,
-      address: raw.message || 'Live GPS Distress Location',
+      address: raw.message || 'Live Citizen GPS Location',
       notes: raw.message || '',
       urgency: 'Critical',
       reporter_phone: 'Citizen Mobile Caller',
@@ -109,7 +168,12 @@ function parseRawMessage(raw) {
     };
   }
 
-  // Attach cached photo if available in current browser session
+  // Case 4: If ntfy delivered an attachment URL
+  if (raw.attachment?.url) {
+    parsed.photo = parsed.photo || raw.attachment.url;
+  }
+
+  // Case 5: Attach cached photo if available in current browser session
   if (parsed && !parsed.photo) {
     try {
       const cached = localStorage.getItem(`ser_sos_photo_${parsed.id}`) || localStorage.getItem('ser_latest_sos_photo');

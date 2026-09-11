@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
+import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
 
 export const AlertsPage = () => {
   const [notifications, setNotifications] = useState([]);
@@ -61,6 +62,61 @@ export const AlertsPage = () => {
 
   useEffect(() => {
     fetchAlerts();
+
+    // Listen for live SOS broadcasts across all devices
+    const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
+      if (!incomingAlert || !incomingAlert.id) return;
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === incomingAlert.id || (incomingAlert.notes && n.message?.includes(incomingAlert.notes)))) {
+          return prev;
+        }
+        const newEntry = {
+          id: incomingAlert.id,
+          title: `CRITICAL: ${incomingAlert.id} Reported`,
+          message: `${incomingAlert.address} - [CITIZEN SOS] ${incomingAlert.type} distress call. Contact: ${incomingAlert.reporter_phone || 'Citizen'}. ${incomingAlert.notes || ''}`,
+          severity: 'critical',
+          type: 'Critical',
+          is_read: false,
+          latitude: incomingAlert.latitude,
+          longitude: incomingAlert.longitude,
+          address: incomingAlert.address,
+          photo: incomingAlert.photo || null,
+          created_at: incomingAlert.timestamp || new Date().toISOString(),
+        };
+        return [newEntry, ...prev];
+      });
+      setUnreadCount((c) => c + 1);
+    });
+
+    const handleCustomSos = (e) => {
+      const incomingAlert = e.detail;
+      if (!incomingAlert) return;
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === incomingAlert.id)) return prev;
+        const newEntry = {
+          id: incomingAlert.id,
+          title: `CRITICAL: ${incomingAlert.id} Reported`,
+          message: `${incomingAlert.address} - [CITIZEN SOS] ${incomingAlert.type} distress call. Contact: ${incomingAlert.reporter_phone || 'Citizen'}. ${incomingAlert.notes || ''}`,
+          severity: 'critical',
+          type: 'Critical',
+          is_read: false,
+          latitude: incomingAlert.latitude,
+          longitude: incomingAlert.longitude,
+          address: incomingAlert.address,
+          photo: incomingAlert.photo || null,
+          created_at: incomingAlert.timestamp || new Date().toISOString(),
+        };
+        return [newEntry, ...prev];
+      });
+      setUnreadCount((c) => c + 1);
+    };
+
+    window.addEventListener('ser_emergency_sos', handleCustomSos);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ser_emergency_sos', handleCustomSos);
+    };
   }, [filterSeverity, filterUnreadOnly]);
 
   const handleMarkRead = async (id) => {
@@ -174,7 +230,7 @@ export const AlertsPage = () => {
             const lat = n.latitude != null ? Number(n.latitude) : (matchedInc?.latitude != null ? Number(matchedInc.latitude) : null);
             const lng = n.longitude != null ? Number(n.longitude) : (matchedInc?.longitude != null ? Number(matchedInc.longitude) : null);
             const address = n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : 'Reported Citizen Location');
-            const photo = n.photo || matchedInc?.photo || null;
+            const photo = n.photo || matchedInc?.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${n.incident_id || n.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
             return (
               <div
@@ -256,13 +312,13 @@ export const AlertsPage = () => {
                   </div>
                 </div>
 
-                {/* Exact Location & Coordinates Badge (atcharegai & thirkaregai) */}
+                {/* Accident Location (Place Only) */}
                 <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2">
                   <div className="flex items-start gap-2.5 text-xs">
                     <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5 animate-bounce" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] uppercase font-mono text-slate-400 block font-bold tracking-wider">
-                        துல்லியமான இடம் (EXACT LOCATION):
+                        துல்லியமான இடம் (LOCATION):
                       </span>
                       <span className="text-slate-200 font-semibold text-xs block leading-snug mt-0.5">
                         {address}
@@ -271,30 +327,22 @@ export const AlertsPage = () => {
                   </div>
 
                   {lat != null && lng != null ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-850 text-xs font-mono">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1.5 text-emerald-400 font-bold bg-emerald-950/50 px-2.5 py-1 rounded-lg border border-emerald-500/30 shadow-sm">
-                          <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>அட்சரேகை (Lat): {lat.toFixed(5)}° N</span>
-                          <span className="text-slate-600">|</span>
-                          <span>தீர்க்கரேகை (Lng): {lng.toFixed(5)}° E</span>
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-850 text-xs font-mono">
+                      <span className="text-slate-400 text-[11px] font-mono">
+                        உடனடி மீட்பு வழித்தடம் (Emergency Road Route)
+                      </span>
 
                       <Link
                         to={`/map?focusLat=${lat}&focusLng=${lng}&route=true`}
                         className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-xs font-bold font-mono transition-all"
                       >
-                        <Compass className="w-3.5 h-3.5 text-sky-400" />
-                        <span>வழித்தடம் காண்க (View Route & Map) &rarr;</span>
+                        <Navigation className="w-3.5 h-3.5 text-sky-400" />
+                        <span>வழித்தடம் காண்க (View Route on SER Map) &rarr;</span>
                       </Link>
                     </div>
                   ) : (
                     <div className="pt-2 border-t border-slate-850 text-[11px] font-mono text-slate-400 flex items-center justify-between">
-                      <span className="flex items-center gap-1">
-                        <Navigation className="w-3.5 h-3.5 text-slate-500" />
-                        <span>அட்சரேகை, தீர்க்கரேகை: Satellite GPS fix acquired</span>
-                      </span>
+                      <span className="text-slate-400">இடம் பெறப்பட்டது (Location Verified)</span>
                       <Link
                         to="/map"
                         className="text-sky-400 hover:underline text-[11px] font-mono"
