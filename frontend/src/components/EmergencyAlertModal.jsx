@@ -90,7 +90,7 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 export const EmergencyAlertModal = () => {
   const navigate = useNavigate();
   const [activeAlert, setActiveAlert] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true); // Alarm sound OFF/silenced by default per user request
 
   // Operator / Responder Live Location
   const [responderLocation, setResponderLocation] = useState(null);
@@ -139,15 +139,15 @@ export const EmergencyAlertModal = () => {
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
 
-      // Check if photo exists in cache if not directly in incoming payload
+      // Check if user uploaded photo exists
       if (!incomingAlert.photo) {
         try {
-          const cachedPhoto = localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
+          const cachedPhoto = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
           if (cachedPhoto) incomingAlert.photo = cachedPhoto;
         } catch {}
       }
 
-      const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
+      const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
       const userPhone = cleanPhoneNumber(rawPhone, incomingAlert.id);
       const cleanAddr = cleanLocation(incomingAlert.address);
       const alertType = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
@@ -159,8 +159,7 @@ export const EmergencyAlertModal = () => {
 
       setActiveAlert(incomingAlert);
 
-      // Play emergency siren
-      startEmergencySiren();
+      // Alarm audio siren remains OFF/silenced by default
 
       // Desktop browser notification
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -199,18 +198,18 @@ export const EmergencyAlertModal = () => {
         const incomingAlert = { ...e.detail };
         if (!incomingAlert.photo) {
           try {
-            const cachedPhoto = localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
+            const cachedPhoto = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
             if (cachedPhoto) incomingAlert.photo = cachedPhoto;
           } catch {}
         }
-        const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
+        const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
         incomingAlert.reporter_phone = cleanPhoneNumber(rawPhone, incomingAlert.id);
         incomingAlert.phone = incomingAlert.reporter_phone;
         incomingAlert.type = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
         incomingAlert.address = cleanLocation(incomingAlert.address);
 
         setActiveAlert(incomingAlert);
-        startEmergencySiren();
+        // Siren sound silenced by default
       }
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
@@ -268,7 +267,7 @@ export const EmergencyAlertModal = () => {
   const handleDismiss = () => {
     stopEmergencySiren();
     setActiveAlert(null);
-    setIsMuted(false);
+    setIsMuted(true);
     setIsPhotoModalOpen(false);
   };
 
@@ -302,10 +301,11 @@ export const EmergencyAlertModal = () => {
   const distressType = activeAlert.type || activeAlert.emergencyType || (activeAlert.notes && /fire/i.test(activeAlert.notes) ? 'Fire' : 'Fire');
   const AlertIcon = typeIcons[distressType] || Flame;
 
-  const rawPhone = activeAlert.reporter_phone || activeAlert.phone || '';
+  const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
+  const rawPhone = activeAlert.reporter_phone || activeAlert.phone || userSavedPhone || '';
   const callerPhone = cleanPhoneNumber(rawPhone, activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
-  const displayPhoto = activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
+  const displayPhoto = activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
   const cleanDisplayAddress = cleanLocation(activeAlert.address);
 

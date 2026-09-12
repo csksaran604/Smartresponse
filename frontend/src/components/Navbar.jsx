@@ -101,9 +101,11 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                 if (saved) recentSos = JSON.parse(saved);
               } catch {}
 
-              const recentPhoto = recentSos?.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || localStorage.getItem(`ser_sos_photo_${recentSos?.id}`)) : null) || SAMPLE_ACCIDENT_PHOTO;
-              const rawPhone = recentSos?.phone || recentSos?.reporter_phone || '';
-              const citizenPhone = cleanPhoneNumber(rawPhone || '+91 98401 23456', 'SOS-FIRE');
+              const userSavedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null;
+              const recentPhoto = recentSos?.photo || userSavedPhoto || null;
+              const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+              const rawPhone = recentSos?.phone || recentSos?.reporter_phone || userSavedPhone || '';
+              const citizenPhone = cleanPhoneNumber(rawPhone, 'SOS-FIRE');
 
               const testAlert = {
                 id: `SOS-FIRE-${Date.now().toString().slice(-4)}`,

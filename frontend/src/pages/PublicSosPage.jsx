@@ -88,9 +88,9 @@ export const PublicSosPage = () => {
   const [locating, setLocating] = useState(true);
   const [gpsError, setGpsError] = useState(null);
 
-  const [emergencyType, setEmergencyType] = useState('Medical');
+  const [emergencyType, setEmergencyType] = useState('Fire');
   const [notes, setNotes] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : ''));
   const [countdown, setCountdown] = useState(null);
   const [sosSent, setSosSent] = useState(false);
   const [sentDetails, setSentDetails] = useState(null);
@@ -98,7 +98,7 @@ export const PublicSosPage = () => {
 
   // Live Camera / Photo Capture State
   const [cameraActive, setCameraActive] = useState(false);
-  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [capturedPhoto, setCapturedPhoto] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null));
   const [cameraError, setCameraError] = useState(null);
   const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (front)
   const videoRef = useRef(null);
@@ -273,6 +273,10 @@ export const PublicSosPage = () => {
       const rawDataUrl = canvas.toDataURL('image/jpeg', 0.85);
       const compressed = await compressImage(rawDataUrl, 640, 480, 0.65);
       setCapturedPhoto(compressed);
+      try {
+        localStorage.setItem('ser_user_uploaded_photo', compressed);
+        localStorage.setItem('ser_latest_sos_photo', compressed);
+      } catch {}
       stopCamera();
     } catch (e) {
       console.warn('Capture error:', e);
@@ -287,6 +291,10 @@ export const PublicSosPage = () => {
     reader.onload = async (ev) => {
       const compressed = await compressImage(ev.target.result, 640, 480, 0.65);
       setCapturedPhoto(compressed);
+      try {
+        localStorage.setItem('ser_user_uploaded_photo', compressed);
+        localStorage.setItem('ser_latest_sos_photo', compressed);
+      } catch {}
       stopCamera();
     };
     reader.readAsDataURL(file);
@@ -315,8 +323,15 @@ export const PublicSosPage = () => {
   // Immediate Transmission
   const transmitEmergencySos = async () => {
     setBroadcasting(true);
-    const enteredPhone = phone.trim();
+    const enteredPhone = phone.trim() || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '');
+    if (enteredPhone && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('ser_user_phone', enteredPhone);
+      } catch {}
+    }
     const cleanPhone = cleanPhoneNumber(enteredPhone, Date.now());
+    const finalPhone = enteredPhone || cleanPhone;
+    const finalPhoto = capturedPhoto || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null);
     const cleanAddr = cleanLocation(address);
     const emergencyPayload = {
       emergencyType,
@@ -324,9 +339,9 @@ export const PublicSosPage = () => {
       longitude: coords?.lng != null ? Number(coords.lng) : 77.7172,
       address: cleanAddr,
       notes: notes.trim(),
-      phone: cleanPhone,
-      reporter_phone: cleanPhone,
-      photo: capturedPhoto || null,
+      phone: finalPhone,
+      reporter_phone: finalPhone,
+      photo: finalPhoto,
       urgency: 'Critical',
     };
 
@@ -339,14 +354,14 @@ export const PublicSosPage = () => {
         latitude: emergencyPayload.latitude,
         longitude: emergencyPayload.longitude,
         address: emergencyPayload.address,
-        description: `[CITIZEN SOS] ${emergencyPayload.emergencyType} alert: ${emergencyPayload.notes || 'Immediate assistance required.'}${cleanPhone ? ` • Contact: ${cleanPhone}` : ''}`,
+        description: `[CITIZEN SOS] ${emergencyPayload.emergencyType} alert: ${emergencyPayload.notes || 'Immediate assistance required.'}${finalPhone ? ` • Contact: ${finalPhone}` : ''}`,
         severity: 'Critical',
-        reporter: cleanPhone ? `Citizen (${cleanPhone})` : 'Citizen Direct',
-        phone: cleanPhone,
-        phone_number: cleanPhone,
-        reporter_phone: cleanPhone,
+        reporter: finalPhone ? `Citizen (${finalPhone})` : 'Citizen Direct',
+        phone: finalPhone,
+        phone_number: finalPhone,
+        reporter_phone: finalPhone,
         ai_confidence: 99.0,
-        photo: capturedPhoto || null,
+        photo: finalPhoto,
       }).catch(() => {});
 
       setSosSent(true);
@@ -575,6 +590,37 @@ export const PublicSosPage = () => {
               </div>
             )}
 
+            {/* CITIZEN CONTACT PHONE NUMBER */}
+            <div className="bg-slate-900/95 border-2 border-slate-800 rounded-2xl p-3.5 shadow-lg space-y-1.5">
+              <label className="flex items-center justify-between text-xs font-bold text-slate-200 font-mono uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Your Contact Phone Number:</span>
+                </span>
+                {phone.trim() ? (
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                    SAVED ✓
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                    REQUIRED
+                  </span>
+                )}
+              </label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  try {
+                    localStorage.setItem('ser_user_phone', e.target.value);
+                  } catch {}
+                }}
+                placeholder="Enter your phone number (e.g. 98401 23456)"
+                className="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-sm text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+              />
+            </div>
+
             {/* 2. GIANT CIRCULAR 1-TAP SOS BUTTON */}
             <div className="flex flex-col items-center justify-center py-2">
               <div className="relative flex items-center justify-center">
@@ -731,7 +777,13 @@ export const PublicSosPage = () => {
 
                       <button
                         type="button"
-                        onClick={() => setCapturedPhoto(null)}
+                        onClick={() => {
+                          setCapturedPhoto(null);
+                          try {
+                            localStorage.removeItem('ser_user_uploaded_photo');
+                            localStorage.removeItem('ser_latest_sos_photo');
+                          } catch {}
+                        }}
                         className="py-1.5 px-3 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/40 text-xs font-mono flex items-center justify-center gap-1 transition-colors"
                         title="Remove attached photo"
                       >

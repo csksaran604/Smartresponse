@@ -74,6 +74,7 @@ export async function broadcastEmergencySos(alertData) {
     try {
       localStorage.setItem(`ser_sos_photo_${alertId}`, rawPhoto);
       localStorage.setItem('ser_latest_sos_photo', rawPhoto);
+      localStorage.setItem('ser_user_uploaded_photo', rawPhoto);
     } catch (e) {
       console.warn('Could not cache photo locally:', e);
     }
@@ -87,10 +88,16 @@ export async function broadcastEmergencySos(alertData) {
     } catch {}
   }
 
-  const userPhone = alertData.phone || alertData.reporter_phone || '';
-  const cleanPhone = cleanPhoneNumber(userPhone, alertId);
+  const rawUserPhone = alertData.phone || alertData.reporter_phone || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '') || '';
+  if (rawUserPhone && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ser_user_phone', rawUserPhone);
+    } catch {}
+  }
+  const cleanPhone = cleanPhoneNumber(rawUserPhone, alertId);
   const cleanAddr = cleanLocation(alertData.address);
-  const finalPhoto = rawPhoto || photoUrl || null;
+  const finalPhoto = rawPhoto || photoUrl || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_uploaded_photo') : null);
+  const cloudPhoto = photoUrl || (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) ? rawPhoto : null);
 
   const payload = {
     id: alertId,
@@ -107,8 +114,13 @@ export async function broadcastEmergencySos(alertData) {
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
+  // Broadcast lightweight payload over cloud relay (small URL instead of 100KB base64)
+  const broadcastPayload = {
+    ...payload,
+    photo: cloudPhoto,
+  };
+
   try {
-    // Send lightweight JSON payload over ntfy cloud relay
     const res = await fetch(PUBLISH_URL, {
       method: 'POST',
       headers: {
@@ -116,7 +128,7 @@ export async function broadcastEmergencySos(alertData) {
         'Priority': '5',
         'Tags': 'rotating_light,warning,ambulance',
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(broadcastPayload),
     });
 
     if (!res.ok) {
@@ -129,6 +141,7 @@ export async function broadcastEmergencySos(alertData) {
       if (finalPhoto) {
         localStorage.setItem(`ser_sos_photo_${payload.id}`, finalPhoto);
         localStorage.setItem('ser_latest_sos_photo', finalPhoto);
+        localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
       }
       window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
     } catch {}
@@ -171,6 +184,7 @@ function parseRawMessage(raw) {
   if (!parsed) {
     const text = (raw.title || '') + ' ' + (raw.message || '');
     const detectedType = /fire/i.test(text) ? 'Fire' : /police|crime/i.test(text) ? 'Police' : /traffic|crash|collision/i.test(text) ? 'Traffic' : 'Medical';
+    const savedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
     parsed = {
       id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
       type: detectedType,
@@ -179,8 +193,8 @@ function parseRawMessage(raw) {
       address: cleanLocation(raw.message || 'Perundurai Road, Erode, Tamil Nadu'),
       notes: raw.message || '',
       urgency: 'Critical',
-      reporter_phone: cleanPhoneNumber('', raw.id),
-      phone: cleanPhoneNumber('', raw.id),
+      reporter_phone: cleanPhoneNumber(savedPhone, raw.id),
+      phone: cleanPhoneNumber(savedPhone, raw.id),
       timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
     };
   }
@@ -193,7 +207,7 @@ function parseRawMessage(raw) {
   // Case 5: Attach cached photo if available in current browser session
   if (parsed && !parsed.photo) {
     try {
-      const cached = localStorage.getItem(`ser_sos_photo_${parsed.id}`) || localStorage.getItem('ser_latest_sos_photo');
+      const cached = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${parsed.id}`) || localStorage.getItem('ser_latest_sos_photo');
       if (cached) {
         parsed.photo = cached;
       }

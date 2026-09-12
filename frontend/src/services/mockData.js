@@ -339,9 +339,18 @@ export function cleanPhoneNumber(phone, fallbackSeed = '') {
       trimmed === 'Citizen Direct' ||
       trimmed === 'Not Provided'
     );
-    if (!isTestOrGeneric && /\d{6,}/.test(trimmed)) {
+    if (!isTestOrGeneric && /\d{4,}/.test(trimmed)) {
       return trimmed;
     }
+  }
+  // Check if citizen entered phone exists in localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const userPhone = localStorage.getItem('ser_user_phone');
+      if (userPhone && /\d{4,}/.test(userPhone.trim())) {
+        return userPhone.trim();
+      }
+    } catch {}
   }
   // Assign deterministic realistic citizen mobile number from pool
   let hash = 0;
@@ -737,8 +746,9 @@ export async function handleMockRequest(config) {
     const cleanAddr = cleanLocation(body?.address);
     const desc = body?.description || '';
     const detectedType = body?.emergency_type || body?.emergencyType || body?.type || (/fire/i.test(desc) ? 'Fire' : /police|crime/i.test(desc) ? 'Police' : /traffic|crash|collision/i.test(desc) ? 'Traffic' : 'Fire');
-    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
-    const photo = body?.photo || body?.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || null) : null);
+    const storedUserPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || storedUserPhone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
+    const photo = body?.photo || body?.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo') || null) : null);
     const reporterLabel = userPhone ? `Citizen (${userPhone})` : 'Citizen Direct';
 
     const newInc = {

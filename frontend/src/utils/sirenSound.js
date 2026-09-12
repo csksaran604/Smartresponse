@@ -9,6 +9,7 @@ let oscillator = null;
 let gainNode = null;
 let isSirenPlaying = false;
 let lfo = null;
+let sirenDisabled = true; // Alarm sound silenced/disabled per user request
 
 function getAudioContext() {
   if (!audioCtx) {
@@ -23,11 +24,16 @@ function getAudioContext() {
   return audioCtx;
 }
 
+export function enableSiren(enabled = false) {
+  sirenDisabled = !enabled;
+  if (sirenDisabled) stopEmergencySiren();
+}
+
 /**
- * Starts the emergency siren alarm
+ * Starts the emergency siren alarm (kept silent by default)
  */
 export function startEmergencySiren() {
-  if (isSirenPlaying) return;
+  if (sirenDisabled || isSirenPlaying) return;
 
   try {
     const ctx = getAudioContext();
