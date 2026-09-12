@@ -701,8 +701,11 @@ export async function handleMockRequest(config) {
   if (url === '/accidents' && method === 'post') {
     const incidents = mockDb.getIncidents();
     const cleanAddr = cleanLocation(body?.address);
-    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''));
-    const reporterLabel = userPhone ? `Citizen (${userPhone})` : (body?.reporter && !body?.reporter.includes('TEST0') ? body.reporter : 'Citizen Direct');
+    const desc = body?.description || '';
+    const detectedType = body?.emergency_type || body?.emergencyType || body?.type || (/fire/i.test(desc) ? 'Fire' : /police|crime/i.test(desc) ? 'Police' : /traffic|crash|collision/i.test(desc) ? 'Traffic' : 'Fire');
+    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
+    const photo = body?.photo || body?.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || null) : null);
+    const reporterLabel = userPhone ? `Citizen (${userPhone})` : 'Citizen Direct';
 
     const newInc = {
       id: Date.now(),
@@ -712,28 +715,31 @@ export async function handleMockRequest(config) {
       latitude: body?.latitude || 11.3410,
       longitude: body?.longitude || 77.7172,
       address: cleanAddr,
-      description: body?.description ? body.description.replace(/Live Tested [^\.]+\./gi, '').replace(/\+91-98765-TEST0/g, userPhone || 'Not Provided') : 'Emergency incident reported via terminal',
+      description: body?.description ? body.description.replace(/Live Tested [^\.]+\./gi, '').replace(/\+91-98765-TEST0/g, userPhone) : `[CITIZEN SOS] ${detectedType} emergency reported`,
       severity: body?.severity || 'Critical',
-      ai_confidence: body?.ai_confidence || 95.0,
-      verification_status: body?.verification_status || 'Pending',
+      emergency_type: detectedType,
+      type: detectedType,
+      ai_confidence: body?.ai_confidence || 98.5,
+      verification_status: body?.verification_status || 'Verified',
       response_status: 'Pending',
       assigned_unit_id: null,
       reporter: reporterLabel,
       phone_number: userPhone,
-      photo: body?.photo || body?.photo_url || null,
+      phone: userPhone,
+      photo: photo,
     };
 
     incidents.unshift(newInc);
     mockDb.saveIncidents(incidents);
 
-    // Add alert notification with clean message and location
+    // Add alert notification with clean message, correct type, photo, and phone
     const notifs = mockDb.getNotifications();
     notifs.unshift({
       id: Date.now(),
-      title: `${newInc.severity.toUpperCase()}: ${newInc.incident_id} Reported`,
-      message: `${newInc.address} - ${newInc.description.slice(0, 100)}`,
-      type: newInc.severity === 'Critical' ? 'Critical' : 'Warning',
-      severity: newInc.severity.toLowerCase(),
+      title: `CRITICAL: ${newInc.incident_id} Reported (${detectedType})`,
+      message: `${newInc.address} - [CITIZEN SOS] ${detectedType} distress call. Contact: ${userPhone}. ${body?.notes || ''}`,
+      type: detectedType,
+      severity: 'critical',
       is_read: false,
       latitude: newInc.latitude,
       longitude: newInc.longitude,
@@ -741,10 +747,12 @@ export async function handleMockRequest(config) {
       incident_id: newInc.id,
       incident_code: newInc.incident_id,
       photo: newInc.photo,
+      reporter_phone: userPhone,
+      phone: userPhone,
       created_at: new Date().toISOString(),
     });
     mockDb.saveNotifications(notifs);
-    mockDb.addLog('CREATE', 'Accident', `Created ticket ${newInc.incident_id}`);
+    mockDb.addLog('CREATE', 'Accident', `Created ticket ${newInc.incident_id} (${detectedType})`);
 
     return mockResponse({ accident: newInc, message: 'Accident recorded successfully' }, 201);
   }

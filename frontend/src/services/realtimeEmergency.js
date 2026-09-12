@@ -9,6 +9,8 @@ const PUBLISH_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}`;
 const SUBSCRIBE_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/sse`;
 const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=60s`;
 
+import { cleanPhoneNumber, cleanLocation } from './mockData';
+
 // Track alerts processed in current session to prevent duplicate popups
 const processedAlertIds = new Set();
 
@@ -86,24 +88,24 @@ export async function broadcastEmergencySos(alertData) {
   }
 
   const userPhone = alertData.phone || alertData.reporter_phone || '';
-  const cleanPhone = (userPhone && !userPhone.includes('TEST0') && userPhone !== 'Citizen Mobile Caller') ? userPhone.trim() : '';
+  const cleanPhone = cleanPhoneNumber(userPhone, alertId);
+  const cleanAddr = cleanLocation(alertData.address);
+  const finalPhoto = rawPhoto || photoUrl || null;
 
   const payload = {
     id: alertId,
-    type: alertData.emergencyType || alertData.type || 'Medical',
+    type: alertData.emergencyType || alertData.type || 'Fire',
     latitude: alertData.latitude != null ? Number(alertData.latitude) : 11.3410,
     longitude: alertData.longitude != null ? Number(alertData.longitude) : 77.7172,
-    address: alertData.address || `Perundurai Road, Erode, Tamil Nadu`,
+    address: cleanAddr,
     notes: alertData.notes || 'Emergency assistance requested via citizen mobile portal',
     urgency: alertData.urgency || 'Critical',
     reporter_phone: cleanPhone,
-    photo: photoUrl || (rawPhoto && rawPhoto.length < 2000 ? rawPhoto : null),
+    phone: cleanPhone,
+    photo: finalPhoto,
     timestamp: new Date().toISOString(),
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
-
-  // Remember our own sent alert so we don't alarm ourselves on the same phone
-  processedAlertIds.add(payload.id);
 
   try {
     // Send lightweight JSON payload over ntfy cloud relay
@@ -123,13 +125,22 @@ export async function broadcastEmergencySos(alertData) {
 
     // Also persist in local storage as current active SOS
     try {
-      localStorage.setItem('ser_active_sos', JSON.stringify({ ...payload, photo: rawPhoto || photoUrl }));
-      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: { ...payload, photo: rawPhoto || photoUrl } }));
+      localStorage.setItem('ser_active_sos', JSON.stringify(payload));
+      if (finalPhoto) {
+        localStorage.setItem(`ser_sos_photo_${payload.id}`, finalPhoto);
+        localStorage.setItem('ser_latest_sos_photo', finalPhoto);
+      }
+      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
     } catch {}
 
     return { success: true, payload };
   } catch (err) {
     console.error('Failed to broadcast SOS over cloud relay:', err);
+    // Still trigger local event even if network relay failed
+    try {
+      localStorage.setItem('ser_active_sos', JSON.stringify(payload));
+      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
+    } catch {}
     return { success: false, payload, error: err.message };
   }
 }
@@ -158,15 +169,18 @@ function parseRawMessage(raw) {
 
   // Case 3: Reconstruct from text message
   if (!parsed) {
+    const text = (raw.title || '') + ' ' + (raw.message || '');
+    const detectedType = /fire/i.test(text) ? 'Fire' : /police|crime/i.test(text) ? 'Police' : /traffic|crash|collision/i.test(text) ? 'Traffic' : 'Medical';
     parsed = {
       id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
-      type: (raw.title || raw.message || '').includes('POLICE') ? 'Police' : (raw.title || raw.message || '').includes('FIRE') ? 'Fire' : 'Medical',
-      latitude: 13.0827,
-      longitude: 80.2707,
-      address: raw.message || 'Erode, Tamil Nadu',
+      type: detectedType,
+      latitude: 11.3410,
+      longitude: 77.7172,
+      address: cleanLocation(raw.message || 'Perundurai Road, Erode, Tamil Nadu'),
       notes: raw.message || '',
       urgency: 'Critical',
-      reporter_phone: '',
+      reporter_phone: cleanPhoneNumber('', raw.id),
+      phone: cleanPhoneNumber('', raw.id),
       timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
     };
   }

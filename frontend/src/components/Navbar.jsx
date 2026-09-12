@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { notificationsApi, healthApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
+import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
   const { user, logout } = useAuth();
@@ -94,14 +95,29 @@ export const Navbar = ({ setIsSidebarOpen }) => {
           type="button"
           onClick={() => {
             const fireTestEvent = (lat, lng, addr) => {
+              // Retrieve recent active SOS if citizen reported
+              let recentSos = null;
+              try {
+                const saved = localStorage.getItem('ser_active_sos');
+                if (saved) recentSos = JSON.parse(saved);
+              } catch {}
+
+              const recentPhoto = recentSos?.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || localStorage.getItem(`ser_sos_photo_${recentSos?.id}`)) : null);
+              const distressType = recentSos?.type || recentSos?.emergencyType || 'Fire';
+              const rawPhone = recentSos?.phone || recentSos?.reporter_phone || '';
+              const citizenPhone = cleanPhoneNumber(rawPhone, recentSos?.id || 'TEST-99');
+
               const testAlert = {
-                id: `TEST-${Date.now().toString().slice(-4)}`,
-                type: 'Medical',
+                id: recentSos?.id || `TEST-${Date.now().toString().slice(-4)}`,
+                type: distressType,
+                emergencyType: distressType,
                 latitude: lat,
                 longitude: lng,
-                address: addr || `Perundurai Road, Erode, Tamil Nadu`,
-                notes: 'Emergency alarm and dispatch modal verification',
-                reporter_phone: '',
+                address: cleanLocation(addr || recentSos?.address || `Perundurai Road, Erode, Tamil Nadu`),
+                notes: recentSos?.notes || 'Citizen reported emergency distress alert',
+                reporter_phone: citizenPhone,
+                phone: citizenPhone,
+                photo: recentPhoto,
                 urgency: 'Critical',
                 timestamp: new Date().toISOString(),
               };

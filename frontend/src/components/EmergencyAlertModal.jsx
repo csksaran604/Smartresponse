@@ -25,6 +25,7 @@ import {
 import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
 import { startEmergencySiren, stopEmergencySiren } from '../utils/sirenSound';
 import { accidentsApi } from '../services/api';
+import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
 
 // Custom Map Markers
 const accidentMarkerIcon = L.divIcon({
@@ -146,6 +147,16 @@ export const EmergencyAlertModal = () => {
         } catch {}
       }
 
+      const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
+      const userPhone = cleanPhoneNumber(rawPhone, incomingAlert.id);
+      const cleanAddr = cleanLocation(incomingAlert.address);
+      const alertType = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
+
+      incomingAlert.reporter_phone = userPhone;
+      incomingAlert.phone = userPhone;
+      incomingAlert.type = alertType;
+      incomingAlert.address = cleanAddr;
+
       setActiveAlert(incomingAlert);
 
       // Play emergency siren
@@ -153,8 +164,8 @@ export const EmergencyAlertModal = () => {
 
       // Desktop browser notification
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification(`🚨 CITIZEN SOS: ${incomingAlert.type || 'Emergency'}`, {
-          body: `${incomingAlert.address || 'Live Location'}\nContact: ${incomingAlert.reporter_phone || incomingAlert.phone || 'Citizen'}`,
+        new Notification(`🚨 CITIZEN SOS: ${alertType}`, {
+          body: `${cleanAddr}\nContact: ${userPhone}`,
           icon: '/favicon.ico',
         });
       }
@@ -162,21 +173,13 @@ export const EmergencyAlertModal = () => {
       // Automatically register into backend/mock DB so it appears on the Live Map
       try {
         if (incomingAlert.latitude && incomingAlert.longitude) {
-          const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
-          const userPhone = (!rawPhone.includes('TEST0') && rawPhone !== 'Citizen Mobile Caller') ? rawPhone.trim() : '';
-          const cleanAddr = (incomingAlert.address || 'Perundurai Road, Erode, Tamil Nadu')
-            .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
-            .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
-            .replace(/^[•\-\,\s]+/, '')
-            .trim() || 'Perundurai Road, Erode, Tamil Nadu';
-
           accidentsApi.createAccident({
             latitude: incomingAlert.latitude,
             longitude: incomingAlert.longitude,
             address: cleanAddr,
-            description: `[CITIZEN SOS] ${incomingAlert.type || 'Emergency'} distress call.${userPhone ? ` Phone: ${userPhone}.` : ''} ${incomingAlert.notes || ''}`,
+            description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${incomingAlert.notes || ''}`,
             severity: 'Critical',
-            reporter: userPhone ? `Citizen (${userPhone})` : 'Citizen SOS',
+            reporter: `Citizen (${userPhone})`,
             phone: userPhone,
             phone_number: userPhone,
             reporter_phone: userPhone,
@@ -190,8 +193,31 @@ export const EmergencyAlertModal = () => {
       }
     });
 
+    // Also listen to local ser_emergency_sos custom events
+    const handleDirectSos = (e) => {
+      if (e.detail) {
+        const incomingAlert = { ...e.detail };
+        if (!incomingAlert.photo) {
+          try {
+            const cachedPhoto = localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
+            if (cachedPhoto) incomingAlert.photo = cachedPhoto;
+          } catch {}
+        }
+        const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
+        incomingAlert.reporter_phone = cleanPhoneNumber(rawPhone, incomingAlert.id);
+        incomingAlert.phone = incomingAlert.reporter_phone;
+        incomingAlert.type = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
+        incomingAlert.address = cleanLocation(incomingAlert.address);
+
+        setActiveAlert(incomingAlert);
+        startEmergencySiren();
+      }
+    };
+    window.addEventListener('ser_emergency_sos', handleDirectSos);
+
     return () => {
       unsubscribe();
+      window.removeEventListener('ser_emergency_sos', handleDirectSos);
       stopEmergencySiren();
     };
   }, [getResponderLocation]);
@@ -273,17 +299,15 @@ export const EmergencyAlertModal = () => {
     Fire: Flame,
     Traffic: AlertTriangle,
   };
-  const AlertIcon = typeIcons[activeAlert.type] || AlertTriangle;
+  const distressType = activeAlert.type || activeAlert.emergencyType || (activeAlert.notes && /fire/i.test(activeAlert.notes) ? 'Fire' : 'Fire');
+  const AlertIcon = typeIcons[distressType] || Flame;
 
   const rawPhone = activeAlert.reporter_phone || activeAlert.phone || '';
-  const callerPhone = (!rawPhone.includes('TEST0') && rawPhone !== 'Citizen Mobile Caller') ? rawPhone.trim() : null;
+  const callerPhone = cleanPhoneNumber(rawPhone, activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
+  const displayPhoto = activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
-  const cleanDisplayAddress = (activeAlert.address || 'Perundurai Road, Erode, Tamil Nadu')
-    .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
-    .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
-    .replace(/^[•\-\,\s]+/, '')
-    .trim() || 'Perundurai Road, Erode, Tamil Nadu';
+  const cleanDisplayAddress = cleanLocation(activeAlert.address);
 
   const exactLat = activeAlert.latitude != null ? Number(activeAlert.latitude).toFixed(5) : null;
   const exactLng = activeAlert.longitude != null ? Number(activeAlert.longitude).toFixed(5) : null;
@@ -360,7 +384,7 @@ export const EmergencyAlertModal = () => {
                     DISTRESS TYPE
                   </span>
                   <span className="text-base font-black text-rose-300">
-                    {activeAlert.type || 'Medical'} Emergency
+                    {distressType} Emergency
                   </span>
                 </div>
               </div>
@@ -370,7 +394,7 @@ export const EmergencyAlertModal = () => {
             </div>
 
             {/* 2. CITIZEN LIVE ACCIDENT CAMERA PHOTO (CONFIRMATION PROOF) */}
-            {activeAlert.photo ? (
+            {displayPhoto ? (
               <div className="p-3 rounded-2xl bg-slate-850 border-2 border-emerald-500/40 overflow-hidden shadow-lg">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-750">
                   <div className="flex items-center gap-2">
@@ -386,7 +410,7 @@ export const EmergencyAlertModal = () => {
 
                 <div className="relative mt-2 rounded-xl overflow-hidden bg-black group cursor-pointer" onClick={() => setIsPhotoModalOpen(true)}>
                   <img
-                    src={activeAlert.photo}
+                    src={displayPhoto}
                     alt="Accident scene camera proof"
                     className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
                   />
@@ -551,7 +575,7 @@ export const EmergencyAlertModal = () => {
                     CALLER CONTACT
                   </span>
                   <span className="text-sm font-mono font-bold text-white">
-                    {callerPhone || 'Not provided by caller'}
+                    {callerPhone}
                   </span>
                 </div>
               </div>
@@ -561,6 +585,7 @@ export const EmergencyAlertModal = () => {
                   href={`tel:${callerPhone}`}
                   className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold font-mono flex items-center gap-1 shadow-md transition-colors"
                 >
+                  <PhoneCall className="w-3.5 h-3.5" />
                   <span>Call Citizen</span>
                 </a>
               )}
@@ -590,7 +615,7 @@ export const EmergencyAlertModal = () => {
       </div>
 
       {/* Fullscreen Photo Lightbox Modal */}
-      {isPhotoModalOpen && activeAlert.photo && (
+      {isPhotoModalOpen && displayPhoto && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl animate-fadeIn">
           <div className="relative max-w-2xl w-full bg-slate-900 rounded-3xl border-2 border-emerald-500/50 overflow-hidden shadow-2xl">
             <div className="p-4 bg-slate-850 flex items-center justify-between border-b border-slate-700">
@@ -610,7 +635,7 @@ export const EmergencyAlertModal = () => {
 
             <div className="p-3 flex items-center justify-center bg-black max-h-[75vh]">
               <img
-                src={activeAlert.photo}
+                src={displayPhoto}
                 alt="Full size accident scene evidence"
                 className="max-h-[70vh] w-auto object-contain rounded-xl"
               />
