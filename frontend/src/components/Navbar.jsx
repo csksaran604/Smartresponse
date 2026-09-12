@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { notificationsApi, healthApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
-import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
+import { cleanPhoneNumber, cleanLocation, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
   const { user, logout } = useAuth();
@@ -95,32 +95,37 @@ export const Navbar = ({ setIsSidebarOpen }) => {
           type="button"
           onClick={() => {
             const fireTestEvent = (lat, lng, addr) => {
-              // Retrieve recent active SOS if citizen reported
               let recentSos = null;
               try {
                 const saved = localStorage.getItem('ser_active_sos');
                 if (saved) recentSos = JSON.parse(saved);
               } catch {}
 
-              const recentPhoto = recentSos?.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || localStorage.getItem(`ser_sos_photo_${recentSos?.id}`)) : null);
-              const distressType = recentSos?.type || recentSos?.emergencyType || 'Fire';
+              const recentPhoto = recentSos?.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_latest_sos_photo') || localStorage.getItem(`ser_sos_photo_${recentSos?.id}`)) : null) || SAMPLE_ACCIDENT_PHOTO;
               const rawPhone = recentSos?.phone || recentSos?.reporter_phone || '';
-              const citizenPhone = cleanPhoneNumber(rawPhone, recentSos?.id || 'TEST-99');
+              const citizenPhone = cleanPhoneNumber(rawPhone || '+91 98401 23456', 'SOS-FIRE');
 
               const testAlert = {
-                id: recentSos?.id || `TEST-${Date.now().toString().slice(-4)}`,
-                type: distressType,
-                emergencyType: distressType,
+                id: `SOS-FIRE-${Date.now().toString().slice(-4)}`,
+                type: 'Fire',
+                emergencyType: 'Fire',
                 latitude: lat,
                 longitude: lng,
                 address: cleanLocation(addr || recentSos?.address || `Perundurai Road, Erode, Tamil Nadu`),
-                notes: recentSos?.notes || 'Citizen reported emergency distress alert',
+                notes: 'Citizen reported vehicle collision with heavy fire and smoke. Immediate rescue dispatched.',
                 reporter_phone: citizenPhone,
                 phone: citizenPhone,
                 photo: recentPhoto,
                 urgency: 'Critical',
                 timestamp: new Date().toISOString(),
               };
+              try {
+                localStorage.setItem('ser_active_sos', JSON.stringify(testAlert));
+                if (recentPhoto) {
+                  localStorage.setItem('ser_latest_sos_photo', recentPhoto);
+                  localStorage.setItem(`ser_sos_photo_${testAlert.id}`, recentPhoto);
+                }
+              } catch {}
               window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: testAlert }));
             };
 

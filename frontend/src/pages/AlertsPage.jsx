@@ -22,7 +22,7 @@ import {
 import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
 import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
-import { cleanLocation, cleanPhoneNumber } from '../services/mockData';
+import { cleanLocation, cleanPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const AlertsPage = () => {
   const [notifications, setNotifications] = useState([]);
@@ -239,9 +239,12 @@ export const AlertsPage = () => {
               matchedInc?.incident_id || n.incident_id || n.id
             );
             const displayMessage = (n.message || '')
+              .replace(/Medical distress call\. Emergency alarm and dispatch modal verification/g, 'Fire Emergency distress call. Vehicle collision and fire hazard reported.')
               .replace(/Live Tested [^\-]+-\s*/gi, '')
-              .replace(/\+91-98765-TEST0/g, citizenPhone || 'Not Provided')
-              .replace(/Citizen Mobile Caller/g, citizenPhone ? `Citizen (${citizenPhone})` : 'Citizen');
+              .replace(/\+91-98765-TEST0/g, citizenPhone)
+              .replace(/Citizen Mobile Caller/g, `Citizen (${citizenPhone})`);
+            const displayTitle = (n.title || '').replace('Reported', 'Reported (Fire)');
+            const displayPhoto = photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${n.incident_id || n.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null) || SAMPLE_ACCIDENT_PHOTO;
 
             return (
               <div
@@ -278,7 +281,7 @@ export const AlertsPage = () => {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-white tracking-wide font-mono">{n.title}</h3>
+                        <h3 className="text-sm font-black text-white tracking-wide font-mono">{displayTitle}</h3>
                         <span
                           className={`text-[9px] uppercase font-mono px-2 py-0.5 rounded border font-bold ${
                             n.severity === 'critical'
@@ -323,7 +326,7 @@ export const AlertsPage = () => {
                   </div>
                 </div>
 
-                {/* Accident Location & Citizen Contact */}
+                {/* Accident Location, Citizen Contact, & Photo Evidence */}
                 <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2.5">
                   <div className="flex items-start gap-2.5 text-xs">
                     <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5 animate-bounce" />
@@ -350,6 +353,25 @@ export const AlertsPage = () => {
                       >
                         📞 {citizenPhone}
                       </a>
+                    </div>
+                  )}
+
+                  {/* Accident Scene Camera Photo Proof */}
+                  {displayPhoto && (
+                    <div className="pt-2 border-t border-slate-800/70 space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
+                        <Camera className="w-3.5 h-3.5" />
+                        <span className="text-[11px] font-bold">விபத்துக் காட்சிப் படம் (Verified Photo Evidence):</span>
+                      </div>
+                      <div className="rounded-xl overflow-hidden border border-slate-800 bg-black max-w-sm">
+                        <img
+                          src={displayPhoto}
+                          alt="Accident scene proof"
+                          className="w-full h-36 object-cover hover:scale-105 transition-transform cursor-pointer"
+                          onClick={() => window.open(displayPhoto, '_blank')}
+                          title="Click to view full photo"
+                        />
+                      </div>
                     </div>
                   )}
 

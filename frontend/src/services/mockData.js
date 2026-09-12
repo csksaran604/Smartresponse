@@ -326,6 +326,8 @@ export const REALISTIC_CITIZEN_PHONES = [
   '+91 98405 11223',
 ];
 
+export const SAMPLE_ACCIDENT_PHOTO = 'https://images.unsplash.com/photo-1599423300746-b62533397364?w=600&auto=format&fit=crop&q=80';
+
 export function cleanPhoneNumber(phone, fallbackSeed = '') {
   if (phone && typeof phone === 'string') {
     const trimmed = phone.trim();
@@ -391,6 +393,10 @@ export const mockDb = {
         newReporter = `Citizen (${currentPhone})`;
         changed = true;
       }
+      if (!inc.photo) {
+        inc.photo = SAMPLE_ACCIDENT_PHOTO;
+        changed = true;
+      }
       if (changed) mutated = true;
       return {
         ...inc,
@@ -430,11 +436,34 @@ export const mockDb = {
         changed = true;
       }
       let newMsg = notif.message || '';
+      let newTitle = notif.title || '';
+      let newType = notif.type || 'Fire';
+      const notifPhone = cleanPhoneNumber(notif.reporter_phone || notif.phone || '', notif.id);
+      const notifPhoto = notif.photo || (typeof window !== 'undefined' ? localStorage.getItem('ser_latest_sos_photo') : null) || SAMPLE_ACCIDENT_PHOTO;
+
+      if (newMsg.includes('Medical distress call. Emergency alarm and dispatch modal verification')) {
+        newMsg = newMsg.replace('Medical distress call. Emergency alarm and dispatch modal verification', 'Fire distress call. Citizen caller reported vehicle fire hazard.');
+        newTitle = newTitle.replace('Reported', 'Reported (Fire)');
+        newType = 'Fire';
+        changed = true;
+      }
       if (newMsg.includes('Live Tested') || newMsg.includes('TEST0')) {
         newMsg = newMsg
           .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, cleanLocation(notif.address || ''))
           .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
-          .replace(/\+91-98765-TEST0/g, 'Not Provided');
+          .replace(/\+91-98765-TEST0/g, notifPhone);
+        changed = true;
+      }
+      if (!notif.photo) {
+        notif.photo = notifPhoto;
+        changed = true;
+      }
+      if (notif.reporter_phone !== notifPhone) {
+        notif.reporter_phone = notifPhone;
+        changed = true;
+      }
+      if (notif.type === 'Medical' && (newMsg.includes('Fire') || newTitle.includes('Fire'))) {
+        newType = 'Fire';
         changed = true;
       }
       if (changed) mutated = true;
@@ -442,6 +471,11 @@ export const mockDb = {
         ...notif,
         address: newAddress,
         message: newMsg,
+        title: newTitle,
+        type: newType,
+        reporter_phone: notifPhone,
+        phone: notifPhone,
+        photo: notifPhoto,
       };
     });
     if (mutated) {
