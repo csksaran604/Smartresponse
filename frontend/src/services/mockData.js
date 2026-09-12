@@ -762,17 +762,15 @@ export async function handleMockRequest(config) {
     const incidents = mockDb.getIncidents();
     const cleanAddr = cleanLocation(body?.address);
     const desc = body?.description || '';
-    const storedType = typeof window !== 'undefined' ? (localStorage.getItem('ser_selected_distress_type') || '') : '';
     const detectedType = body?.emergency_type || body?.emergencyType || body?.type || (
       /traffic|crash|collision/i.test(desc) ? 'Traffic' :
       /police|crime/i.test(desc) ? 'Police' :
       /fire/i.test(desc) ? 'Fire' :
       /medical|ambulance|health|injury/i.test(desc) ? 'Medical' :
-      storedType || 'Medical'
+      'Medical'
     );
-    const storedUserPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
-    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || storedUserPhone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
-    const photo = body?.photo || body?.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo') || null) : null);
+    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || body?.phone_number || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
+    const photo = body?.photo || body?.photo_url || null;
     const reporterLabel = userPhone ? `Citizen (${userPhone})` : 'Citizen Direct';
 
     const newInc = {

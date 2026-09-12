@@ -128,27 +128,16 @@ export const EmergencyAlertModal = () => {
   useEffect(() => {
     getResponderLocation();
 
-    // Load recent active SOS on mount (< 10 mins old)
+    // Check if there is a very fresh SOS (< 90 seconds old) on mount, otherwise clear stale state
     try {
       const activeRaw = localStorage.getItem('ser_active_sos');
       if (activeRaw) {
         const parsed = JSON.parse(activeRaw);
-        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 10 * 60 * 1000)) {
-          const userSavedPhone = localStorage.getItem('ser_user_phone') || '';
-          const userUploadedPhoto = localStorage.getItem('ser_user_uploaded_photo') || null;
-          const userSelectedType = localStorage.getItem('ser_selected_distress_type') || null;
-          if (userSavedPhone && !isDummyPhoneNumber(userSavedPhone)) {
-            parsed.reporter_phone = userSavedPhone;
-            parsed.phone = userSavedPhone;
-          }
-          if (userSelectedType) {
-            parsed.type = userSelectedType;
-            parsed.emergencyType = userSelectedType;
-          }
-          if (userUploadedPhoto) {
-            parsed.photo = userUploadedPhoto;
-          }
+        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 90 * 1000)) {
           setActiveAlert(parsed);
+        } else {
+          // Clear stale test alert from prior session
+          localStorage.removeItem('ser_active_sos');
         }
       }
     } catch {}
@@ -181,9 +170,7 @@ export const EmergencyAlertModal = () => {
       incomingAlert.type = alertType;
       incomingAlert.emergencyType = alertType;
       incomingAlert.address = cleanAddr;
-      if (remotePhoto) {
-        incomingAlert.photo = remotePhoto;
-      }
+      incomingAlert.photo = remotePhoto;
 
       setActiveAlert(incomingAlert);
 
@@ -214,7 +201,7 @@ export const EmergencyAlertModal = () => {
             reporter_phone: userPhone,
             ai_confidence: 99.0,
             verification_status: 'Verified',
-            photo: incomingAlert.photo || null,
+            photo: remotePhoto || null,
           }).catch(() => {});
         }
       } catch (e) {
@@ -231,17 +218,16 @@ export const EmergencyAlertModal = () => {
         const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
                             (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
         const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
-        const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null);
+        const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || null;
 
         incomingAlert.reporter_phone = userPhone;
         incomingAlert.phone = userPhone;
         incomingAlert.type = alertType;
         incomingAlert.emergencyType = alertType;
         incomingAlert.address = cleanAddr;
-        if (alertPhoto) incomingAlert.photo = alertPhoto;
+        incomingAlert.photo = alertPhoto;
 
         setActiveAlert(incomingAlert);
-        // Siren sound silenced by default
       }
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
@@ -346,7 +332,7 @@ export const EmergencyAlertModal = () => {
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
 
   // Remote Citizen photo takes first priority:
-  const displayPhoto = activeAlert.photo || activeAlert.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null);
+  const displayPhoto = activeAlert.photo || activeAlert.photo_url || null;
 
   const cleanDisplayAddress = cleanLocation(activeAlert.address);
 

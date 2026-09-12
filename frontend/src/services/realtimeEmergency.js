@@ -7,7 +7,7 @@
 const EMERGENCY_TOPIC = 'ser_smartresponse_alerts_v2';
 const PUBLISH_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}`;
 const SUBSCRIBE_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/sse`;
-const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=60s`;
+const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=10m`;
 
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from './mockData';
 
@@ -41,6 +41,9 @@ async function uploadPhotoToCloud(photo) {
 
     if (!blob) return null;
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+
     const res = await fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}_uploads`, {
       method: 'PUT',
       headers: {
@@ -48,7 +51,9 @@ async function uploadPhotoToCloud(photo) {
         Title: 'Citizen SOS Accident Photo',
       },
       body: blob,
+      signal: controller.signal,
     });
+    clearTimeout(timer);
 
     if (res.ok) {
       const data = await res.json();
@@ -66,10 +71,10 @@ async function uploadPhotoToCloud(photo) {
  * Broadcasts an SOS alert from any mobile phone or computer to all listening operators
  */
 export async function broadcastEmergencySos(alertData) {
-  // Always cache local photo immediately in current browser
   const rawPhoto = alertData.photo || alertData.photo_url || null;
   const alertId = alertData.id || `SOS-${Date.now().toString().slice(-6)}`;
 
+  // Cache photo locally on current reporting device
   if (rawPhoto) {
     try {
       localStorage.setItem(`ser_sos_photo_${alertId}`, rawPhoto);
@@ -80,7 +85,7 @@ export async function broadcastEmergencySos(alertData) {
     }
   }
 
-  // Upload photo to cloud file relay to get a small URL that fits ntfy 4KB payload limit
+  // Upload photo to cloud file relay with timeout so operator gets direct public photo URL
   let photoUrl = null;
   if (rawPhoto) {
     try {
@@ -100,10 +105,9 @@ export async function broadcastEmergencySos(alertData) {
   }
   const cleanPhone = rawUserPhone || cleanPhoneNumber('', alertId);
   const cleanAddr = cleanLocation(alertData.address);
-  const finalPhoto = rawPhoto || photoUrl || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_uploaded_photo') : null);
-  const cloudPhoto = photoUrl || (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) ? rawPhoto : null);
+  const finalPhoto = photoUrl || (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) ? rawPhoto : null);
 
-  const selectedType = alertData.type || alertData.emergencyType || (typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null) || 'Medical';
+  const selectedType = alertData.type || alertData.emergencyType || 'Medical';
   const payload = {
     id: alertId,
     type: selectedType,
@@ -116,41 +120,34 @@ export async function broadcastEmergencySos(alertData) {
     reporter_phone: cleanPhone,
     phone: cleanPhone,
     photo: finalPhoto,
-    timestamp: new Date().toISOString(),
+    timestamp: alertData.timestamp || new Date().toISOString(),
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
-  // 1. Immediately persist in local storage and dispatch event synchronously
+  // 1. Immediately persist in local storage and dispatch event on reporter device
   try {
-    localStorage.setItem('ser_active_sos', JSON.stringify(payload));
-    if (finalPhoto) {
-      localStorage.setItem(`ser_sos_photo_${payload.id}`, finalPhoto);
-      localStorage.setItem('ser_latest_sos_photo', finalPhoto);
-      localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
-    }
-    if (rawUserPhone && !isDummyPhoneNumber(rawUserPhone)) {
-      localStorage.setItem('ser_user_phone', rawUserPhone);
-    }
-    window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
+    localStorage.setItem('ser_active_sos', JSON.stringify({ ...payload, photo: rawPhoto || finalPhoto }));
+    window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: { ...payload, photo: rawPhoto || finalPhoto } }));
   } catch (err) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. Broadcast lightweight payload over cloud relay (small URL instead of 100KB base64)
-  const broadcastPayload = {
-    ...payload,
-    photo: cloudPhoto,
+  // 2. Broadcast lightweight payload over cloud relay (pure ASCII headers prevent fetch ByteString crash)
+  const broadcastHeaders = {
+    'Title': `EMERGENCY SOS: ${String(payload.type).toUpperCase()}`,
+    'Priority': '5',
+    'Tags': `rotating_light,${payload.type ? payload.type.toLowerCase() : 'ambulance'}`,
   };
+
+  if (finalPhoto) {
+    broadcastHeaders['Attach'] = finalPhoto;
+  }
 
   try {
     const res = await fetch(PUBLISH_URL, {
       method: 'POST',
-      headers: {
-        'Title': `🚨 EMERGENCY SOS: ${payload.type.toUpperCase()}`,
-        'Priority': '5',
-        'Tags': 'rotating_light,warning,ambulance',
-      },
-      body: JSON.stringify(broadcastPayload),
+      headers: broadcastHeaders,
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -183,29 +180,27 @@ function parseRawMessage(raw) {
 
   // Case 2: raw is already the payload
   if (!parsed && raw.latitude && raw.longitude) {
-    parsed = raw;
+    parsed = { ...raw };
   }
 
   // Case 3: Reconstruct from text message
   if (!parsed) {
     const text = (raw.title || '') + ' ' + (raw.message || '');
-    const storedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
     const detectedType = /traffic|crash|collision/i.test(text) ? 'Traffic' :
                          /police|crime/i.test(text) ? 'Police' :
                          /fire/i.test(text) ? 'Fire' :
-                         /medical|ambulance|health|injury/i.test(text) ? 'Medical' :
-                         storedType || 'Medical';
-    const savedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+                         /medical|ambulance|health|injury/i.test(text) ? 'Medical' : 'Medical';
     parsed = {
       id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
       type: detectedType,
+      emergencyType: detectedType,
       latitude: 11.3410,
       longitude: 77.7172,
       address: cleanLocation(raw.message || 'Perundurai Road, Erode, Tamil Nadu'),
       notes: raw.message || '',
       urgency: 'Critical',
-      reporter_phone: cleanPhoneNumber(savedPhone, raw.id),
-      phone: cleanPhoneNumber(savedPhone, raw.id),
+      reporter_phone: cleanPhoneNumber('', raw.id),
+      phone: cleanPhoneNumber('', raw.id),
       timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
     };
   }
@@ -213,16 +208,6 @@ function parseRawMessage(raw) {
   // Case 4: If ntfy delivered an attachment URL
   if (raw.attachment?.url) {
     parsed.photo = parsed.photo || raw.attachment.url;
-  }
-
-  // Case 5: Attach cached photo if available in current browser session
-  if (parsed && !parsed.photo) {
-    try {
-      const cached = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${parsed.id}`) || localStorage.getItem('ser_latest_sos_photo');
-      if (cached) {
-        parsed.photo = cached;
-      }
-    } catch {}
   }
 
   return parsed;
@@ -332,19 +317,6 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     if (e.detail) handleNewAlert(e.detail);
   };
   window.addEventListener('ser_emergency_sos', handleLocalCustomEvent);
-
-  // Check if there is an unprocessed active SOS stored recently
-  try {
-    const saved = localStorage.getItem('ser_active_sos');
-    if (saved) {
-      const parsedSaved = JSON.parse(saved);
-      if (parsedSaved && parsedSaved.timestamp) {
-        if (Date.now() - new Date(parsedSaved.timestamp).getTime() < 3 * 60 * 1000) {
-          handleNewAlert(parsedSaved);
-        }
-      }
-    }
-  } catch {}
 
   // Start both SSE and Polling
   connectSse();
