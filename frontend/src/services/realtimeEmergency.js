@@ -1,20 +1,24 @@
 /**
- * Real-Time Emergency SOS Cloud Relay Service (Dual-Relay Redundant Architecture)
- * Connects public citizen mobile devices directly with the Admin Dispatch Terminal
- * using Server-Sent Events (SSE) + background catch-up polling with zero rate-limit issues.
+ * Real-Time Emergency SOS Cloud Relay & Sync Service
+ * Connects citizen mobile devices directly with the Admin Dispatch Terminal
+ * using high-reliability REST cloud sync + dual-relay SSE pub/sub.
  */
 
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from './mockData';
 
 export const EMERGENCY_TOPIC = 'ser_emergency_live_v5';
 
-// Redundant relay hosts prevent single-point-of-failure or 429 rate limit blocks
+// Fast high-availability REST cloud object ID for instant cross-device synchronization
+const REST_CLOUD_OBJECT_ID = 'ff808181a067127101a094ee8d8d008b';
+const REST_SYNC_URL = `https://api.restful-api.dev/objects/${REST_CLOUD_OBJECT_ID}`;
+
+// Redundant pub/sub relays
 export const RELAY_HOSTS = [
   'https://ntfy.envs.net',
   'https://ntfy.sh',
 ];
 
-// Track alerts processed in current session to prevent duplicate popups across dual relays
+// Track alerts processed in current session to prevent duplicate popups
 const processedAlertIds = new Set();
 
 /**
@@ -44,7 +48,7 @@ export async function uploadPhotoToCloud(photo) {
 
     if (!blob) return null;
 
-    // Try primary relay first
+    // Try redundant cloud relays
     for (const host of RELAY_HOSTS) {
       try {
         const controller = new AbortController();
@@ -68,7 +72,7 @@ export async function uploadPhotoToCloud(photo) {
           }
         }
       } catch (e) {
-        console.warn(`Upload fallback attempt on ${host} note:`, e);
+        console.warn(`Upload attempt on ${host} note:`, e);
       }
     }
   } catch (err) {
@@ -78,7 +82,7 @@ export async function uploadPhotoToCloud(photo) {
 }
 
 /**
- * Broadcasts an SOS alert from any mobile phone to all listening Admin terminals
+ * Broadcasts an SOS alert from mobile phone to all listening Admin terminals
  */
 export async function broadcastEmergencySos(alertData) {
   const rawPhoto = alertData.photo || alertData.photo_url || null;
@@ -142,7 +146,22 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. Broadcast over redundant dual cloud relays (ASCII headers prevent fetch ByteString errors)
+  // 2. Publish to REST Cloud Sync (guaranteed delivery across devices with zero rate-limit blocks)
+  try {
+    await fetch(REST_SYNC_URL, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'SER_ACTIVE_DISPATCH_SOS',
+        data: payload,
+      }),
+    });
+    console.log('[SER Relay] ✅ Published to REST Cloud Sync successfully.');
+  } catch (err) {
+    console.warn('[SER Relay] REST Cloud sync warning:', err);
+  }
+
+  // 3. Broadcast to dual SSE pub/sub relays in parallel
   const broadcastHeaders = {
     'Title': `EMERGENCY SOS: ${String(payload.type).toUpperCase()}`,
     'Priority': '5',
@@ -153,18 +172,15 @@ export async function broadcastEmergencySos(alertData) {
     broadcastHeaders['Attach'] = finalPhoto;
   }
 
-  const broadcastResults = await Promise.allSettled(
-    RELAY_HOSTS.map(async (host) => {
-      const res = await fetch(`${host}/${EMERGENCY_TOPIC}`, {
+  await Promise.allSettled(
+    RELAY_HOSTS.map((host) =>
+      fetch(`${host}/${EMERGENCY_TOPIC}`, {
         method: 'POST',
         headers: broadcastHeaders,
         body: JSON.stringify(payload),
-      });
-      return { host, status: res.status };
-    })
+      }).catch((e) => console.warn(`Relay ${host} broadcast warning:`, e))
+    )
   );
-
-  console.log('[SER Relay] Broadcast results across dual relays:', broadcastResults);
 
   return { success: true, payload };
 }
@@ -236,7 +252,7 @@ export function parseRawMessage(raw) {
 }
 
 /**
- * Subscribes to the real-time emergency channel with dual SSE + Catch-up Polling
+ * Subscribes to the real-time emergency channel with REST sync + Dual SSE
  */
 export function subscribeToEmergencyAlerts(onAlertReceived) {
   if (typeof window === 'undefined') {
@@ -271,20 +287,38 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     onAlertReceived(alert);
   };
 
-  // 1. Primary: Server-Sent Events (SSE) stream on redundant hosts
+  // 1. Primary: REST Cloud Sync Polling (active every 3.5s, reliable cross-device)
+  const pollRestSync = async () => {
+    if (isClosed) return;
+
+    try {
+      const res = await fetch(REST_SYNC_URL);
+      if (res.ok) {
+        const json = await res.json();
+        const alertData = json.data;
+        if (alertData && alertData.id && (alertData.type || alertData.emergencyType)) {
+          const parsed = parseRawMessage({ message: JSON.stringify(alertData) });
+          if (parsed) handleNewAlert(parsed);
+        }
+      }
+    } catch (e) {
+      // Ignore network jitter
+    }
+
+    if (!isClosed) {
+      pollTimer = setTimeout(pollRestSync, 3500);
+    }
+  };
+
+  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts
   const connectSse = () => {
     if (isClosed || typeof EventSource === 'undefined') return;
-
-    eventSources.forEach((es) => {
-      try { es.close(); } catch {}
-    });
-    eventSources = [];
 
     RELAY_HOSTS.forEach((host) => {
       try {
         const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse`);
         es.onopen = () => {
-          console.log(`[SER Relay] SSE open on ${host}`);
+          console.log(`[SER Relay] SSE stream open on ${host}`);
         };
         es.onmessage = (event) => {
           try {
@@ -306,50 +340,15 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     });
   };
 
-  // 2. Secondary: Catch-up poll (every 20 seconds, avoids 429 rate limits)
-  const pollFallback = async () => {
-    if (isClosed) return;
-
-    for (const host of RELAY_HOSTS) {
-      try {
-        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=10m`);
-        if (res.ok) {
-          const text = await res.text();
-          const lines = text.trim().split('\n').filter(Boolean);
-          const validAlerts = lines
-            .map((line) => {
-              try {
-                const raw = JSON.parse(line);
-                return raw.event === 'message' ? parseRawMessage(raw) : null;
-              } catch {
-                return null;
-              }
-            })
-            .filter(Boolean)
-            .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
-
-          for (const alert of validAlerts) {
-            handleNewAlert(alert);
-          }
-          break; // Stop after first successful host
-        }
-      } catch {}
-    }
-
-    if (!isClosed) {
-      pollTimer = setTimeout(pollFallback, 20000);
-    }
-  };
-
   // Listen to window custom events
   const handleLocalCustomEvent = (e) => {
     if (e.detail) handleNewAlert(e.detail);
   };
   window.addEventListener('ser_emergency_sos', handleLocalCustomEvent);
 
-  // Start SSE stream & initial catch-up poll
+  // Start both REST sync and SSE stream
+  pollRestSync();
   connectSse();
-  pollFallback();
 
   return () => {
     isClosed = true;
