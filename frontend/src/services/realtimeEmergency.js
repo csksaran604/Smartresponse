@@ -60,14 +60,14 @@ export function markAlertDismissed(id) {
 }
 
 /**
- * Checks cloud relays for the latest undismissed emergency message within last 12 hours
+ * Checks cloud relays for the latest undismissed emergency message within last 3 minutes
  */
 export async function checkPendingCloudAlert() {
   for (const host of RELAY_HOSTS) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4500);
-      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=12h`, {
+      const timer = setTimeout(() => controller.abort(), 4000);
+      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=3m`, {
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -82,7 +82,7 @@ export async function checkPendingCloudAlert() {
             if (alert && alert.id && !isAlertDismissed(alert.id)) {
               if (alert.timestamp) {
                 const age = Date.now() - new Date(alert.timestamp).getTime();
-                if (age < 12 * 60 * 60 * 1000) {
+                if (age < 3 * 60 * 1000) {
                   return alert;
                 }
               } else {
@@ -329,10 +329,10 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     if (isAlertDismissed(alert.id)) return;
     if (processedAlertIds.has(alert.id)) return;
 
-    // Check alert age: support up to 12 hours so logged-out/offline admins see it upon login
+    // Check alert age: support up to 3 minutes so only freshly reported emergencies show
     if (alert.timestamp) {
       const alertTime = new Date(alert.timestamp).getTime();
-      if (Date.now() - alertTime > 12 * 60 * 60 * 1000) {
+      if (Date.now() - alertTime > 3 * 60 * 1000) {
         processedAlertIds.add(alert.id);
         return;
       }
@@ -349,7 +349,7 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     onAlertReceived(alert);
   };
 
-  // 1. Primary: Cloud Relay History Polling (active every 4s, resilient cross-device)
+  // 1. Primary: Cloud Relay History Polling (active every 4s, strictly recent messages)
   const pollRelayHistory = async () => {
     if (isClosed) return;
 
@@ -358,7 +358,7 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=12h`, {
+        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=3m`, {
           signal: controller.signal,
         });
         clearTimeout(timer);
@@ -386,13 +386,13 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     }
   };
 
-  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts with since=12h replay
+  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts with since=3m replay
   const connectSse = () => {
     if (isClosed || typeof EventSource === 'undefined') return;
 
     RELAY_HOSTS.forEach((host) => {
       try {
-        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=12h`);
+        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=3m`);
         es.onopen = () => {
           console.log(`[SER Relay] SSE stream open on ${host}`);
         };

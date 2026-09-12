@@ -176,28 +176,45 @@ export const EmergencyAlertModal = () => {
     }
   }, []);
 
-  // Check for pending reports / SOS sent while admin was offline or logged out
+  // Clean up any stale old active alerts on mount so past alerts never pop up
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('ser_active_sos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const age = parsed?.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : Infinity;
+        if (age > 3 * 60 * 1000 || isAlertDismissed(parsed?.id)) {
+          localStorage.removeItem('ser_active_sos');
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Check for freshly submitted reports / SOS sent while admin was logging in
   useEffect(() => {
     const isOwner = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
     if (!isOwner) return;
 
     const checkForPendingAlerts = async () => {
-      // 1. Check local storage for recent undismissed emergency alert
+      // 1. Check local storage for recent undismissed emergency alert (strictly within last 3 minutes)
       try {
         const saved = localStorage.getItem('ser_active_sos');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
-            const age = parsed.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : 0;
-            if (age < 12 * 60 * 60 * 1000) {
+            const age = parsed.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : Infinity;
+            if (age < 3 * 60 * 1000) {
               triggerEmergencyAlert(parsed);
               return;
+            } else {
+              // Discard stale alert so it never pops up again
+              localStorage.removeItem('ser_active_sos');
             }
           }
         }
       } catch {}
 
-      // 2. Check cloud ntfy relays for any citizen report sent while admin was logged out
+      // 2. Check cloud ntfy relays for any citizen report sent right before admin login (strictly within last 3 minutes)
       try {
         const cloudAlert = await checkPendingCloudAlert();
         if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id)) {
@@ -205,44 +222,10 @@ export const EmergencyAlertModal = () => {
           return;
         }
       } catch {}
-
-      // 3. Check database / mock store for recent unverified / critical incident reported by citizen
-      try {
-        const res = await accidentsApi.getAccidents({ per_page: 5 });
-        const list = res.data?.accidents || [];
-        for (const inc of list) {
-          const incId = inc.incident_id || inc.id;
-          if (isAlertDismissed(incId)) continue;
-          const isPending = inc.verification_status === 'Pending' || inc.response_status === 'Pending';
-          const isCritical = inc.severity === 'Critical' || inc.severity === 'High';
-          const isSos = inc.description?.includes('[CITIZEN SOS]') || inc.reporter?.includes('Citizen');
-          if (isPending && (isCritical || isSos)) {
-            const incAge = inc.date_time || inc.created_at ? Date.now() - new Date(inc.date_time || inc.created_at).getTime() : 0;
-            if (incAge < 12 * 60 * 60 * 1000) {
-              const formattedAlert = {
-                id: inc.incident_id || `INC-${inc.id}`,
-                type: inc.emergency_type || inc.type || 'Medical',
-                emergencyType: inc.emergency_type || inc.type || 'Medical',
-                latitude: inc.latitude,
-                longitude: inc.longitude,
-                address: inc.address,
-                notes: inc.description,
-                phone: inc.phone_number || inc.phone,
-                reporter_phone: inc.phone_number || inc.phone,
-                photo: inc.photo,
-                urgency: inc.severity,
-                timestamp: inc.date_time || inc.created_at,
-              };
-              triggerEmergencyAlert(formattedAlert);
-              return;
-            }
-          }
-        }
-      } catch {}
     };
 
     checkForPendingAlerts();
-    const interval = setInterval(checkForPendingAlerts, 5000);
+    const interval = setInterval(checkForPendingAlerts, 4000);
     return () => clearInterval(interval);
   }, [isAdmin, triggerEmergencyAlert]);
 
