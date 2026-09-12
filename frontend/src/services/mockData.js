@@ -404,9 +404,9 @@ function setStored(key, val) {
 
 export const mockDb = {
   getIncidents: () => {
-    const raw = getStored(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS);
+    const raw = getStored(STORAGE_KEYS.INCIDENTS, null);
+    let source = Array.isArray(raw) ? raw : INITIAL_INCIDENTS;
     let mutated = false;
-    let source = Array.isArray(raw) && raw.length >= 3 ? raw : INITIAL_INCIDENTS;
 
     const sanitized = source.map((inc, idx) => {
       let changed = false;
@@ -440,22 +440,28 @@ export const mockDb = {
       };
     });
 
-    // Ensure all 8 initial multi-day records are present if user only has 3 legacy records
-    if (sanitized.length < INITIAL_INCIDENTS.length) {
-      INITIAL_INCIDENTS.forEach((initInc) => {
-        if (!sanitized.some((s) => s.incident_id === initInc.incident_id)) {
-          sanitized.push(initInc);
-          mutated = true;
-        }
-      });
-    }
-
     if (mutated) {
-      setStored(STORAGE_KEYS.INCIDENTS, sanitized);
+      mockDb.saveIncidents(sanitized);
     }
     return sanitized;
   },
-  saveIncidents: (data) => setStored(STORAGE_KEYS.INCIDENTS, data),
+  saveIncidents: (data) => {
+    if (!Array.isArray(data)) return;
+    // Guard against localStorage quota exceeded: strip huge multi-megabyte base64 strings
+    const safe = data.map((item) => {
+      if (item.photo && typeof item.photo === 'string' && item.photo.length > 50000) {
+        try {
+          localStorage.setItem(`ser_sos_photo_${item.id || item.incident_id}`, item.photo);
+        } catch {}
+        return {
+          ...item,
+          photo: item.photo.startsWith('http') ? item.photo : SAMPLE_ACCIDENT_PHOTO,
+        };
+      }
+      return item;
+    });
+    setStored(STORAGE_KEYS.INCIDENTS, safe);
+  },
   getUnits: () => getStored(STORAGE_KEYS.UNITS, INITIAL_UNITS),
   saveUnits: (data) => setStored(STORAGE_KEYS.UNITS, data),
   getNotifications: () => {
@@ -509,7 +515,19 @@ export const mockDb = {
     }
     return sanitized;
   },
-  saveNotifications: (data) => setStored(STORAGE_KEYS.NOTIFICATIONS, data),
+  saveNotifications: (data) => {
+    if (!Array.isArray(data)) return;
+    const safe = data.map((item) => {
+      if (item.photo && typeof item.photo === 'string' && item.photo.length > 50000) {
+        return {
+          ...item,
+          photo: item.photo.startsWith('http') ? item.photo : SAMPLE_ACCIDENT_PHOTO,
+        };
+      }
+      return item;
+    });
+    setStored(STORAGE_KEYS.NOTIFICATIONS, safe);
+  },
   getLogs: () => getStored(STORAGE_KEYS.LOGS, INITIAL_LOGS),
   saveLogs: (data) => setStored(STORAGE_KEYS.LOGS, data),
   getUsers: () => getStored(STORAGE_KEYS.USERS, Object.values(DEMO_USERS)),
@@ -837,8 +855,8 @@ export async function handleMockRequest(config) {
     const newInc = {
       id: Date.now(),
       incident_id: `INC-2026-${String(incidents.length + 1).padStart(3, '0')}`,
-      date_time: new Date().toISOString(),
-      created_at: new Date().toISOString(),
+      date_time: body?.date_time || body?.timestamp || new Date().toISOString(),
+      created_at: body?.created_at || body?.timestamp || new Date().toISOString(),
       latitude: body?.latitude || 11.3410,
       longitude: body?.longitude || 77.7172,
       address: cleanAddr,

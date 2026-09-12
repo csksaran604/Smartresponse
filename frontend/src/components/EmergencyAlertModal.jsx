@@ -254,6 +254,8 @@ export const EmergencyAlertModal = () => {
             ai_confidence: 99.0,
             verification_status: 'Verified',
             photo: incomingAlert.photo || null,
+            date_time: incomingAlert.timestamp || new Date().toISOString(),
+            created_at: incomingAlert.timestamp || new Date().toISOString(),
           }).catch(() => {});
         }
       } catch (e) {

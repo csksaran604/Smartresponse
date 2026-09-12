@@ -79,7 +79,7 @@ export const ReportsPage = () => {
       if (!records || records.length === 0) {
         try {
           const fallbackAcc = await accidentsApi.getAccidents(params);
-          const raw = fallbackAcc.data?.incidents || fallbackAcc.data || [];
+          const raw = fallbackAcc.data?.accidents || fallbackAcc.data?.incidents || (Array.isArray(fallbackAcc.data) ? fallbackAcc.data : []);
           if (Array.isArray(raw) && raw.length > 0) {
             records = raw;
             accData = {

@@ -245,6 +245,8 @@ export const CitizenPortalPage = () => {
         ai_confidence: aiResult ? aiResult.confidence_score : 98.0,
         detection_id: aiResult ? aiResult.id : null,
         photo: photoToUse,
+        date_time: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       };
 
       // Immediately update citizen UI to dispatched state

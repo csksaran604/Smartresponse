@@ -397,6 +397,8 @@ export const PublicSosPage = () => {
         reporter_phone: finalPhone,
         ai_confidence: 99.0,
         photo: finalPhoto,
+        date_time: emergencyPayload.timestamp || new Date().toISOString(),
+        created_at: emergencyPayload.timestamp || new Date().toISOString(),
       }),
     ]).catch((err) => {
       console.warn('Background sync note:', err);

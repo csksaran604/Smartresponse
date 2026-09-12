@@ -147,23 +147,8 @@ export const AlertsPage = () => {
 
   const handleDeleteAlert = async (idOrNotif) => {
     const id = typeof idOrNotif === 'object' ? idOrNotif.id : idOrNotif;
-    const notifObj = typeof idOrNotif === 'object' ? idOrNotif : notifications.find((item) => item.id === id);
     try {
       await notificationsApi.deleteNotification(id);
-      // Also delete corresponding accident so it is removed from Reports!
-      const linkedId = notifObj?.incident_id || notifObj?.id || (notifObj?.incident_code ? incidentsMap[notifObj?.incident_code]?.id : null);
-      if (linkedId) {
-        try { await accidentsApi.deleteAccident(linkedId); } catch {}
-      }
-      if (notifObj?.address) {
-        const matchedAcc = Object.values(incidentsMap).find((a) =>
-          a.address === notifObj.address ||
-          (a.latitude === notifObj.latitude && a.longitude === notifObj.longitude)
-        );
-        if (matchedAcc?.id) {
-          try { await accidentsApi.deleteAccident(matchedAcc.id); } catch {}
-        }
-      }
       setNotifications((prev) => prev.filter((n) => n.id !== id));
       setSelectedIds((prev) => prev.filter((item) => item !== id));
       setUnreadCount((c) => Math.max(0, c - 1));
@@ -176,26 +161,12 @@ export const AlertsPage = () => {
 
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Delete ${selectedIds.length} selected alert(s) and clear them from Reports?`)) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected notification(s)? Incident records in Reports will remain safely preserved.`)) return;
 
     for (const id of selectedIds) {
-      const notifObj = notifications.find((n) => n.id === id);
       try {
         await notificationsApi.deleteNotification(id);
       } catch {}
-      const linkedId = notifObj?.incident_id || notifObj?.id || (notifObj?.incident_code ? incidentsMap[notifObj?.incident_code]?.id : null);
-      if (linkedId) {
-        try { await accidentsApi.deleteAccident(linkedId); } catch {}
-      }
-      if (notifObj?.address) {
-        const matchedAcc = Object.values(incidentsMap).find((a) =>
-          a.address === notifObj.address ||
-          (a.latitude === notifObj.latitude && a.longitude === notifObj.longitude)
-        );
-        if (matchedAcc?.id) {
-          try { await accidentsApi.deleteAccident(matchedAcc.id); } catch {}
-        }
-      }
     }
     setNotifications((prev) => prev.filter((n) => !selectedIds.includes(n.id)));
     setUnreadCount((c) => Math.max(0, c - selectedIds.length));
@@ -203,10 +174,9 @@ export const AlertsPage = () => {
   };
 
   const handleClearAllAlerts = async () => {
-    if (!window.confirm('Are you sure you want to delete ALL alerts and clear all incidents from Reports?')) return;
+    if (!window.confirm('Clear all notifications from this inbox? (Accident audit records in Reports will remain safely preserved)')) return;
     try {
       await notificationsApi.clearAll();
-      await accidentsApi.clearAllAccidents();
       setNotifications([]);
       setSelectedIds([]);
       setUnreadCount(0);
@@ -474,7 +444,7 @@ export const AlertsPage = () => {
                     <button
                       onClick={() => handleDeleteAlert(n)}
                       className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 border border-slate-700 transition-colors"
-                      title="Delete this alert and clear from Reports"
+                      title="Delete this notification"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
