@@ -329,29 +329,31 @@ export const REALISTIC_CITIZEN_PHONES = [
 export const SAMPLE_ACCIDENT_PHOTO = 'https://images.unsplash.com/photo-1599423300746-b62533397364?w=600&auto=format&fit=crop&q=80';
 
 export function cleanPhoneNumber(phone, fallbackSeed = '') {
-  if (phone && typeof phone === 'string') {
-    const trimmed = phone.trim();
-    const isTestOrGeneric = (
-      trimmed.toLowerCase().includes('test0') ||
-      trimmed === 'Citizen Mobile Caller' ||
-      trimmed === 'Citizen Mobile SOS' ||
-      trimmed === 'Citizen' ||
-      trimmed === 'Citizen Direct' ||
-      trimmed === 'Not Provided'
-    );
-    if (!isTestOrGeneric && /\d{4,}/.test(trimmed)) {
-      return trimmed;
-    }
+  const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+  const trimmed = typeof phone === 'string' ? phone.trim() : '';
+  const isPlaceholderOrGeneric = (
+    !trimmed ||
+    trimmed.toLowerCase().includes('test0') ||
+    trimmed === 'Citizen Mobile Caller' ||
+    trimmed === 'Citizen Mobile SOS' ||
+    trimmed === 'Citizen' ||
+    trimmed === 'Citizen Direct' ||
+    trimmed === 'Not Provided' ||
+    REALISTIC_CITIZEN_PHONES.includes(trimmed)
+  );
+
+  if (userSavedPhone && /\d{4,}/.test(userSavedPhone.trim()) && isPlaceholderOrGeneric) {
+    return userSavedPhone.trim();
   }
-  // Check if citizen entered phone exists in localStorage
-  if (typeof window !== 'undefined') {
-    try {
-      const userPhone = localStorage.getItem('ser_user_phone');
-      if (userPhone && /\d{4,}/.test(userPhone.trim())) {
-        return userPhone.trim();
-      }
-    } catch {}
+
+  if (trimmed && !isPlaceholderOrGeneric && /\d{4,}/.test(trimmed)) {
+    return trimmed;
   }
+
+  if (userSavedPhone && /\d{4,}/.test(userSavedPhone.trim())) {
+    return userSavedPhone.trim();
+  }
+
   // Assign deterministic realistic citizen mobile number from pool
   let hash = 0;
   const str = String(fallbackSeed || 'INC-101');

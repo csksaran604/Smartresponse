@@ -128,6 +128,26 @@ export const EmergencyAlertModal = () => {
   useEffect(() => {
     getResponderLocation();
 
+    // Load recent active SOS on mount (< 10 mins old)
+    try {
+      const activeRaw = localStorage.getItem('ser_active_sos');
+      if (activeRaw) {
+        const parsed = JSON.parse(activeRaw);
+        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 10 * 60 * 1000)) {
+          const userSavedPhone = localStorage.getItem('ser_user_phone') || '';
+          const userUploadedPhoto = localStorage.getItem('ser_user_uploaded_photo') || null;
+          if (userSavedPhone) {
+            parsed.reporter_phone = userSavedPhone;
+            parsed.phone = userSavedPhone;
+          }
+          if (userUploadedPhoto) {
+            parsed.photo = userUploadedPhoto;
+          }
+          setActiveAlert(parsed);
+        }
+      }
+    } catch {}
+
     // Request desktop notification permission if not yet prompted
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'default') {
@@ -140,14 +160,18 @@ export const EmergencyAlertModal = () => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
 
       // Check if user uploaded photo exists
-      if (!incomingAlert.photo) {
+      const userUploadedPhoto = localStorage.getItem('ser_user_uploaded_photo') || null;
+      if (userUploadedPhoto) {
+        incomingAlert.photo = userUploadedPhoto;
+      } else if (!incomingAlert.photo) {
         try {
-          const cachedPhoto = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
+          const cachedPhoto = localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
           if (cachedPhoto) incomingAlert.photo = cachedPhoto;
         } catch {}
       }
 
-      const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
+      const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
+      const rawPhone = userSavedPhone || incomingAlert.reporter_phone || incomingAlert.phone || '';
       const userPhone = cleanPhoneNumber(rawPhone, incomingAlert.id);
       const cleanAddr = cleanLocation(incomingAlert.address);
       const alertType = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
@@ -302,10 +326,11 @@ export const EmergencyAlertModal = () => {
   const AlertIcon = typeIcons[distressType] || Flame;
 
   const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-  const rawPhone = activeAlert.reporter_phone || activeAlert.phone || userSavedPhone || '';
+  const rawPhone = userSavedPhone || activeAlert.reporter_phone || activeAlert.phone || '';
   const callerPhone = cleanPhoneNumber(rawPhone, activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
-  const displayPhoto = activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
+  const userUploadedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null;
+  const displayPhoto = userUploadedPhoto || activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
   const cleanDisplayAddress = cleanLocation(activeAlert.address);
 

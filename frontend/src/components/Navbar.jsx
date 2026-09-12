@@ -102,19 +102,20 @@ export const Navbar = ({ setIsSidebarOpen }) => {
               } catch {}
 
               const userSavedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null;
-              const recentPhoto = recentSos?.photo || userSavedPhoto || null;
+              const recentPhoto = userSavedPhoto || recentSos?.photo || null;
               const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
-              const rawPhone = recentSos?.phone || recentSos?.reporter_phone || userSavedPhone || '';
-              const citizenPhone = cleanPhoneNumber(rawPhone, 'SOS-FIRE');
+              const citizenPhone = userSavedPhone ? cleanPhoneNumber(userSavedPhone) : cleanPhoneNumber(recentSos?.phone || '', 'SOS-FIRE');
+              const userSavedNotes = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_notes') || '') : '';
+              const alertNotes = userSavedNotes || recentSos?.notes || 'Citizen reported emergency distress call. Immediate rescue dispatched.';
 
               const testAlert = {
-                id: `SOS-FIRE-${Date.now().toString().slice(-4)}`,
+                id: recentSos?.id || `SOS-FIRE-${Date.now().toString().slice(-4)}`,
                 type: 'Fire',
                 emergencyType: 'Fire',
-                latitude: lat,
-                longitude: lng,
-                address: cleanLocation(addr || recentSos?.address || `Perundurai Road, Erode, Tamil Nadu`),
-                notes: 'Citizen reported vehicle collision with heavy fire and smoke. Immediate rescue dispatched.',
+                latitude: recentSos?.latitude || lat,
+                longitude: recentSos?.longitude || lng,
+                address: cleanLocation(recentSos?.address || addr || `Perundurai Road, Erode, Tamil Nadu`),
+                notes: alertNotes,
                 reporter_phone: citizenPhone,
                 phone: citizenPhone,
                 photo: recentPhoto,
