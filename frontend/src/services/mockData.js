@@ -881,6 +881,29 @@ export async function handleMockRequest(config) {
     mockDb.saveNotifications(notifs);
     mockDb.addLog('CREATE', 'Accident', `Created ticket ${newInc.incident_id} (${detectedType})`);
 
+    // Persist as active SOS and dispatch event so admin terminal receives alert even across login/reload
+    if (typeof window !== 'undefined') {
+      try {
+        const emergencyPayload = {
+          id: newInc.incident_id,
+          type: detectedType,
+          emergencyType: detectedType,
+          latitude: newInc.latitude,
+          longitude: newInc.longitude,
+          address: newInc.address,
+          notes: newInc.description,
+          phone: userPhone,
+          reporter_phone: userPhone,
+          photo: newInc.photo,
+          urgency: newInc.severity,
+          timestamp: newInc.created_at,
+          source: 'INCIDENT_REPORT',
+        };
+        localStorage.setItem('ser_active_sos', JSON.stringify(emergencyPayload));
+        window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: emergencyPayload }));
+      } catch {}
+    }
+
     return mockResponse({ accident: newInc, message: 'Accident recorded successfully' }, 201);
   }
 

@@ -14,12 +14,88 @@ const REST_SYNC_URL = `https://api.restful-api.dev/objects/${REST_CLOUD_OBJECT_I
 
 // Redundant pub/sub relays
 export const RELAY_HOSTS = [
-  'https://ntfy.envs.net',
   'https://ntfy.sh',
+  'https://ntfy.envs.net',
 ];
 
 // Track alerts processed in current session to prevent duplicate popups
 const processedAlertIds = new Set();
+
+/**
+ * Check if alert was already dismissed or handled by admin
+ */
+export function isAlertDismissed(id) {
+  if (!id || typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('ser_dismissed_alerts');
+    if (!raw) return false;
+    const dismissed = JSON.parse(raw);
+    return Array.isArray(dismissed) && (dismissed.includes(String(id)) || dismissed.includes(Number(id)));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mark an alert as dismissed so it doesn't pop up again
+ */
+export function markAlertDismissed(id) {
+  if (!id || typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem('ser_dismissed_alerts');
+    const dismissed = raw ? JSON.parse(raw) : [];
+    const strId = String(id);
+    if (Array.isArray(dismissed) && !dismissed.includes(strId)) {
+      dismissed.push(strId);
+      localStorage.setItem('ser_dismissed_alerts', JSON.stringify(dismissed.slice(-100)));
+    }
+    const active = localStorage.getItem('ser_active_sos');
+    if (active) {
+      const parsed = JSON.parse(active);
+      if (parsed?.id === id || String(parsed?.id) === strId) {
+        localStorage.removeItem('ser_active_sos');
+      }
+    }
+  } catch {}
+}
+
+/**
+ * Checks cloud relays for the latest undismissed emergency message within last 12 hours
+ */
+export async function checkPendingCloudAlert() {
+  for (const host of RELAY_HOSTS) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4500);
+      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=12h`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n').filter(Boolean);
+        for (let i = lines.length - 1; i >= 0; i--) {
+          try {
+            const raw = JSON.parse(lines[i]);
+            if (raw.event !== 'message') continue;
+            const alert = parseRawMessage(raw);
+            if (alert && alert.id && !isAlertDismissed(alert.id)) {
+              if (alert.timestamp) {
+                const age = Date.now() - new Date(alert.timestamp).getTime();
+                if (age < 12 * 60 * 60 * 1000) {
+                  return alert;
+                }
+              } else {
+                return alert;
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
 
 /**
  * Uploads citizen captured photo to cloud relay file hosting
@@ -146,22 +222,7 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. Publish to REST Cloud Sync (guaranteed delivery across devices with zero rate-limit blocks)
-  try {
-    await fetch(REST_SYNC_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'SER_ACTIVE_DISPATCH_SOS',
-        data: payload,
-      }),
-    });
-    console.log('[SER Relay] ✅ Published to REST Cloud Sync successfully.');
-  } catch (err) {
-    console.warn('[SER Relay] REST Cloud sync warning:', err);
-  }
-
-  // 3. Broadcast to dual SSE pub/sub relays in parallel
+  // 2. Broadcast to dual SSE pub/sub relays in parallel (persists on relays for offline admins)
   const broadcastHeaders = {
     'Title': `EMERGENCY SOS: ${String(payload.type).toUpperCase()}`,
     'Priority': '5',
@@ -252,7 +313,7 @@ export function parseRawMessage(raw) {
 }
 
 /**
- * Subscribes to the real-time emergency channel with REST sync + Dual SSE
+ * Subscribes to the real-time emergency channel with persistent Cloud History Polling + Dual SSE
  */
 export function subscribeToEmergencyAlerts(onAlertReceived) {
   if (typeof window === 'undefined') {
@@ -265,12 +326,13 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
 
   const handleNewAlert = (alert) => {
     if (!alert || !alert.id) return;
+    if (isAlertDismissed(alert.id)) return;
     if (processedAlertIds.has(alert.id)) return;
 
-    // Check alert age (ignore alerts older than 15 minutes)
+    // Check alert age: support up to 12 hours so logged-out/offline admins see it upon login
     if (alert.timestamp) {
       const alertTime = new Date(alert.timestamp).getTime();
-      if (Date.now() - alertTime > 15 * 60 * 1000) {
+      if (Date.now() - alertTime > 12 * 60 * 60 * 1000) {
         processedAlertIds.add(alert.id);
         return;
       }
@@ -287,36 +349,50 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     onAlertReceived(alert);
   };
 
-  // 1. Primary: REST Cloud Sync Polling (active every 3.5s, reliable cross-device)
-  const pollRestSync = async () => {
+  // 1. Primary: Cloud Relay History Polling (active every 4s, resilient cross-device)
+  const pollRelayHistory = async () => {
     if (isClosed) return;
 
-    try {
-      const res = await fetch(REST_SYNC_URL);
-      if (res.ok) {
-        const json = await res.json();
-        const alertData = json.data;
-        if (alertData && alertData.id && (alertData.type || alertData.emergencyType)) {
-          const parsed = parseRawMessage({ message: JSON.stringify(alertData) });
-          if (parsed) handleNewAlert(parsed);
+    for (const host of RELAY_HOSTS) {
+      if (isClosed) break;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4000);
+        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=12h`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.trim().split('\n').filter(Boolean);
+          for (let i = lines.length - 1; i >= 0; i--) {
+            try {
+              const raw = JSON.parse(lines[i]);
+              if (raw.event !== 'message') continue;
+              const alert = parseRawMessage(raw);
+              if (alert && alert.id && !isAlertDismissed(alert.id) && !processedAlertIds.has(alert.id)) {
+                handleNewAlert(alert);
+                break;
+              }
+            } catch {}
+          }
+          break;
         }
-      }
-    } catch (e) {
-      // Ignore network jitter
+      } catch {}
     }
 
     if (!isClosed) {
-      pollTimer = setTimeout(pollRestSync, 3500);
+      pollTimer = setTimeout(pollRelayHistory, 4000);
     }
   };
 
-  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts
+  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts with since=12h replay
   const connectSse = () => {
     if (isClosed || typeof EventSource === 'undefined') return;
 
     RELAY_HOSTS.forEach((host) => {
       try {
-        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse`);
+        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=12h`);
         es.onopen = () => {
           console.log(`[SER Relay] SSE stream open on ${host}`);
         };
@@ -346,8 +422,8 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
   };
   window.addEventListener('ser_emergency_sos', handleLocalCustomEvent);
 
-  // Start both REST sync and SSE stream
-  pollRestSync();
+  // Start both cloud relay polling and SSE stream
+  pollRelayHistory();
   connectSse();
 
   return () => {

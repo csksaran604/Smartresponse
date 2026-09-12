@@ -22,7 +22,7 @@ import {
   Maximize2,
   ZoomIn
 } from 'lucide-react';
-import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
+import { subscribeToEmergencyAlerts, isAlertDismissed, markAlertDismissed, checkPendingCloudAlert } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
 import { startEmergencySiren, stopEmergencySiren, enableSiren } from '../utils/sirenSound';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from '../services/mockData';
@@ -135,13 +135,119 @@ export const EmergencyAlertModal = () => {
     }
   }, []);
 
+  const triggerEmergencyAlert = useCallback((incomingAlert) => {
+    if (!incomingAlert || !incomingAlert.id) return;
+    if (isAlertDismissed(incomingAlert.id)) return;
+
+    // The incoming remote mobile citizen's data takes absolute precedence:
+    const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
+    const cleanAddr = cleanLocation(incomingAlert.address);
+
+    const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
+                        (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
+    const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
+    const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || null;
+
+    const formattedAlert = {
+      ...incomingAlert,
+      reporter_phone: userPhone,
+      phone: userPhone,
+      type: alertType,
+      emergencyType: alertType,
+      address: cleanAddr,
+      photo: remotePhoto,
+    };
+
+    setActiveAlert(formattedAlert);
+
+    // Emergency Siren: Audible ONLY for Admin device
+    enableSiren(true);
+    startEmergencySiren();
+    setIsMuted(false);
+
+    // Desktop browser notification
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(`🚨 CITIZEN SOS: ${alertType}`, {
+          body: `${cleanAddr}\nContact: ${userPhone}`,
+          icon: '/favicon.ico',
+        });
+      } catch {}
+    }
+  }, []);
+
+  // Check for pending reports / SOS sent while admin was offline or logged out
+  useEffect(() => {
+    const isOwner = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+    if (!isOwner) return;
+
+    const checkForPendingAlerts = async () => {
+      // 1. Check local storage for recent undismissed emergency alert
+      try {
+        const saved = localStorage.getItem('ser_active_sos');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
+            const age = parsed.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : 0;
+            if (age < 12 * 60 * 60 * 1000) {
+              triggerEmergencyAlert(parsed);
+              return;
+            }
+          }
+        }
+      } catch {}
+
+      // 2. Check cloud ntfy relays for any citizen report sent while admin was logged out
+      try {
+        const cloudAlert = await checkPendingCloudAlert();
+        if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id)) {
+          triggerEmergencyAlert(cloudAlert);
+          return;
+        }
+      } catch {}
+
+      // 3. Check database / mock store for recent unverified / critical incident reported by citizen
+      try {
+        const res = await accidentsApi.getAccidents({ per_page: 5 });
+        const list = res.data?.accidents || [];
+        for (const inc of list) {
+          const incId = inc.incident_id || inc.id;
+          if (isAlertDismissed(incId)) continue;
+          const isPending = inc.verification_status === 'Pending' || inc.response_status === 'Pending';
+          const isCritical = inc.severity === 'Critical' || inc.severity === 'High';
+          const isSos = inc.description?.includes('[CITIZEN SOS]') || inc.reporter?.includes('Citizen');
+          if (isPending && (isCritical || isSos)) {
+            const incAge = inc.date_time || inc.created_at ? Date.now() - new Date(inc.date_time || inc.created_at).getTime() : 0;
+            if (incAge < 12 * 60 * 60 * 1000) {
+              const formattedAlert = {
+                id: inc.incident_id || `INC-${inc.id}`,
+                type: inc.emergency_type || inc.type || 'Medical',
+                emergencyType: inc.emergency_type || inc.type || 'Medical',
+                latitude: inc.latitude,
+                longitude: inc.longitude,
+                address: inc.address,
+                notes: inc.description,
+                phone: inc.phone_number || inc.phone,
+                reporter_phone: inc.phone_number || inc.phone,
+                photo: inc.photo,
+                urgency: inc.severity,
+                timestamp: inc.date_time || inc.created_at,
+              };
+              triggerEmergencyAlert(formattedAlert);
+              return;
+            }
+          }
+        }
+      } catch {}
+    };
+
+    checkForPendingAlerts();
+    const interval = setInterval(checkForPendingAlerts, 5000);
+    return () => clearInterval(interval);
+  }, [isAdmin, triggerEmergencyAlert]);
+
   useEffect(() => {
     getResponderLocation();
-
-    // Clean up any stale local storage from prior sessions on mount
-    try {
-      localStorage.removeItem('ser_active_sos');
-    } catch {}
 
     // Request desktop notification permission if not yet prompted
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -154,49 +260,20 @@ export const EmergencyAlertModal = () => {
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
 
-      // The incoming remote mobile citizen's data takes absolute precedence:
-      const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
-      const cleanAddr = cleanLocation(incomingAlert.address);
-
-      // 1. Mobile citizen's phone number
-      const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
-                          (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
-      const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
-
-      // 2. Mobile citizen's photo
-      const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || null;
-
-      incomingAlert.reporter_phone = userPhone;
-      incomingAlert.phone = userPhone;
-      incomingAlert.type = alertType;
-      incomingAlert.emergencyType = alertType;
-      incomingAlert.address = cleanAddr;
-      incomingAlert.photo = remotePhoto;
-
       // STRICTLY ADMIN TERMINAL ONLY: Citizen mobile or viewer devices must NEVER display this popup modal or play sirens!
       const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
       if (!isOwnerAdmin) {
         return;
       }
 
-      setActiveAlert(incomingAlert);
-
-      // Emergency Siren: Audible ONLY for Admin device
-      enableSiren(true);
-      startEmergencySiren();
-      setIsMuted(false);
-
-      // Desktop browser notification
-      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-        new Notification(`🚨 CITIZEN SOS: ${alertType}`, {
-          body: `${cleanAddr}\nContact: ${userPhone}`,
-          icon: '/favicon.ico',
-        });
-      }
+      triggerEmergencyAlert(incomingAlert);
 
       // Automatically register into backend/mock DB so it appears on the Live Map
       try {
         if (incomingAlert.latitude && incomingAlert.longitude) {
+          const cleanAddr = cleanLocation(incomingAlert.address);
+          const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
+          const userPhone = incomingAlert.phone || cleanPhoneNumber('', incomingAlert.id);
           accidentsApi.createAccident({
             latitude: incomingAlert.latitude,
             longitude: incomingAlert.longitude,
@@ -211,7 +288,7 @@ export const EmergencyAlertModal = () => {
             reporter_phone: userPhone,
             ai_confidence: 99.0,
             verification_status: 'Verified',
-            photo: remotePhoto || null,
+            photo: incomingAlert.photo || null,
           }).catch(() => {});
         }
       } catch (e) {
@@ -223,33 +300,12 @@ export const EmergencyAlertModal = () => {
     const handleDirectSos = (e) => {
       if (!e.detail) return;
 
-      // STRICTLY ADMIN TERMINAL ONLY: Citizen mobile or viewer devices must NEVER display this popup modal or play sirens!
       const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
       if (!isOwnerAdmin) {
         return;
       }
 
-      const incomingAlert = { ...e.detail };
-      const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
-      const cleanAddr = cleanLocation(incomingAlert.address);
-      const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
-                          (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
-      const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
-      const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || null;
-
-      incomingAlert.reporter_phone = userPhone;
-      incomingAlert.phone = userPhone;
-      incomingAlert.type = alertType;
-      incomingAlert.emergencyType = alertType;
-      incomingAlert.address = cleanAddr;
-      incomingAlert.photo = alertPhoto;
-
-      setActiveAlert(incomingAlert);
-
-      // Emergency Siren: Audible ONLY for Admin device
-      enableSiren(true);
-      startEmergencySiren();
-      setIsMuted(false);
+      triggerEmergencyAlert(e.detail);
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
 
@@ -258,7 +314,7 @@ export const EmergencyAlertModal = () => {
       window.removeEventListener('ser_emergency_sos', handleDirectSos);
       stopEmergencySiren();
     };
-  }, [getResponderLocation]);
+  }, [getResponderLocation, triggerEmergencyAlert]);
 
   // Fetch real road navigation route (OSRM) between Responder and Accident Scene
   useEffect(() => {
@@ -305,6 +361,9 @@ export const EmergencyAlertModal = () => {
 
   const handleDismiss = () => {
     stopEmergencySiren();
+    if (activeAlert?.id) {
+      markAlertDismissed(activeAlert.id);
+    }
     setActiveAlert(null);
     setIsMuted(true);
     setIsPhotoModalOpen(false);
@@ -323,6 +382,9 @@ export const EmergencyAlertModal = () => {
 
   const handleViewOnLiveMap = () => {
     stopEmergencySiren();
+    if (activeAlert?.id) {
+      markAlertDismissed(activeAlert.id);
+    }
     const lat = activeAlert?.latitude;
     const lng = activeAlert?.longitude;
     setActiveAlert(null);

@@ -27,6 +27,7 @@ import {
   Bell
 } from 'lucide-react';
 import { accidentsApi, unitsApi } from '../services/api';
+import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, formatTime } from '../utils/dateUtils';
@@ -543,6 +544,16 @@ export const LiveMapPage = () => {
         phone: typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') || '' : '',
         ai_confidence: 96.0,
       };
+
+      await broadcastEmergencySos({
+        type: sosType,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
+        address: payload.address,
+        notes: payload.description,
+        phone: payload.phone,
+        urgency: sosSeverity,
+      }).catch(() => {});
 
       const res = await accidentsApi.createAccident(payload);
       setSosSuccess(res.data.accident);

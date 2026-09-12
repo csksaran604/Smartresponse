@@ -112,10 +112,14 @@ export const AuthProvider = ({ children }) => {
       setUser(receivedUser);
       localStorage.setItem('ser_token', receivedToken);
       localStorage.setItem('ser_user', JSON.stringify(receivedUser));
+      if (receivedUser?.role === 'ADMIN' || receivedUser?.role === 'EMERGENCY_OPERATOR') {
+        localStorage.setItem('ser_owner_device', 'true');
+      }
       return receivedUser;
     } catch {
       const adminUser = DEFAULT_ADMIN;
       setUser(adminUser);
+      localStorage.setItem('ser_owner_device', 'true');
       return adminUser;
     }
   };
