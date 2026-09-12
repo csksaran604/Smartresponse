@@ -323,17 +323,21 @@ export const EmergencyAlertModal = () => {
 
   const handleViewOnLiveMap = () => {
     stopEmergencySiren();
-    const lat = activeAlert.latitude;
-    const lng = activeAlert.longitude;
+    const lat = activeAlert?.latitude;
+    const lng = activeAlert?.longitude;
     setActiveAlert(null);
     setIsPhotoModalOpen(false);
-    navigate(`/map?focusLat=${lat}&focusLng=${lng}&route=true`);
+    if (lat && lng) {
+      navigate(`/map?focusLat=${lat}&focusLng=${lng}&route=true`);
+    } else {
+      navigate('/map');
+    }
   };
 
   const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
 
-  // Never render on citizen SOS page or for non-admin viewers
-  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
+  // Never render on citizen SOS page, or on live map page, or for non-admin viewers
+  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen' || location.pathname === '/map') {
     return null;
   }
 
@@ -586,13 +590,14 @@ export const EmergencyAlertModal = () => {
                   <span>En Route from your live GPS to scene</span>
                 </div>
 
-                <a
-                  href={`/map?focusLat=${userLat}&focusLng=${userLng}&route=true`}
+                <button
+                  type="button"
+                  onClick={handleViewOnLiveMap}
                   className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-xs font-mono flex items-center gap-1.5 shadow-md transition-all active:scale-95"
                 >
                   <MapPin className="w-3.5 h-3.5" />
                   <span>View Route on SER Map &rarr;</span>
-                </a>
+                </button>
               </div>
             </div>
 

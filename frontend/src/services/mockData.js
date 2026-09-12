@@ -1028,6 +1028,19 @@ export async function handleMockRequest(config) {
     return mockResponse({ message: 'All notifications marked as read' });
   }
 
+  if (url.match(/^\/notifications\/[^/]+$/) && method === 'delete') {
+    const id = url.split('/')[2];
+    let notifs = mockDb.getNotifications();
+    notifs = notifs.filter(n => String(n.id) !== id);
+    mockDb.saveNotifications(notifs);
+    return mockResponse({ message: 'Notification removed' });
+  }
+
+  if (url === '/notifications' && method === 'delete') {
+    mockDb.saveNotifications([]);
+    return mockResponse({ message: 'All notifications deleted' });
+  }
+
   // -------------------------------------------------------------
   // REPORTS
   // -------------------------------------------------------------

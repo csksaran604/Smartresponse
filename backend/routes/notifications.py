@@ -50,3 +50,23 @@ def mark_all_notifications_read():
     Notification.query.filter_by(is_read=False).update({'is_read': True})
     db.session.commit()
     return jsonify({'message': 'All notifications marked as read'}), 200
+
+
+@notifications_bp.route('/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_notification(id):
+    note = db.session.get(Notification, id)
+    if not note:
+        return jsonify({'error': 'Notification not found'}), 404
+    db.session.delete(note)
+    db.session.commit()
+    return jsonify({'message': 'Notification deleted successfully'}), 200
+
+
+@notifications_bp.route('', methods=['DELETE'])
+@jwt_required()
+def clear_all_notifications():
+    Notification.query.delete()
+    db.session.commit()
+    return jsonify({'message': 'All notifications cleared'}), 200
+

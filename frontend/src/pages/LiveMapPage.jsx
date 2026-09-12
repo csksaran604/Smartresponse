@@ -23,7 +23,8 @@ import {
   Layers,
   Compass,
   Camera,
-  Clock
+  Clock,
+  Bell
 } from 'lucide-react';
 import { accidentsApi, unitsApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
@@ -579,6 +580,24 @@ export const LiveMapPage = () => {
             <Crosshair className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
             <span>{isLocating ? 'Detecting GPS...' : 'My Location'}</span>
           </button>
+
+          <Link
+            to="/alerts"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-rose-300 border border-slate-700 transition-all font-mono"
+            title="Go to Emergency Alerts"
+          >
+            <Bell className="w-3.5 h-3.5 text-rose-400" />
+            <span>Alerts</span>
+          </Link>
+
+          <Link
+            to="/incidents"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-amber-300 border border-slate-700 transition-all font-mono"
+            title="Go to Incidents List"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span>Incidents</span>
+          </Link>
 
           <button
             onClick={() => {

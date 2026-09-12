@@ -17,7 +17,8 @@ import {
   Compass,
   X,
   ZoomIn,
-  PhoneCall
+  PhoneCall,
+  Trash2
 } from 'lucide-react';
 import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
@@ -143,6 +144,33 @@ export const AlertsPage = () => {
     }
   };
 
+  const handleDeleteAlert = async (id) => {
+    try {
+      await notificationsApi.deleteNotification(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (e) {
+      console.error('Delete alert error:', e);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }
+  };
+
+  const handleClearAllAlerts = async () => {
+    if (!window.confirm('Are you sure you want to delete all old alerts?')) return;
+    try {
+      await notificationsApi.clearAll();
+      setNotifications([]);
+      setUnreadCount(0);
+      try {
+        localStorage.removeItem('ser_active_sos');
+      } catch {}
+    } catch (e) {
+      console.error('Clear all error:', e);
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -171,6 +199,16 @@ export const AlertsPage = () => {
             >
               <CheckCheck className="w-4 h-4" />
               <span>Mark All Read</span>
+            </button>
+          )}
+          {notifications.length > 0 && (
+            <button
+              onClick={handleClearAllAlerts}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition-colors shadow-sm"
+              title="Delete all old alerts"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Clear All Alerts</span>
             </button>
           )}
         </div>
@@ -323,6 +361,14 @@ export const AlertsPage = () => {
                         <CheckCircle2 className="w-4 h-4" />
                       </button>
                     )}
+
+                    <button
+                      onClick={() => handleDeleteAlert(n.id)}
+                      className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 border border-slate-700 transition-colors"
+                      title="Delete this alert"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
 

@@ -8,12 +8,14 @@ import {
   Activity,
   Cpu,
   Volume2,
-  Radio
+  Radio,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { notificationsApi, healthApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
+import { startEmergencySiren, stopEmergencySiren, enableSiren } from '../utils/sirenSound';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
   const { user, isAdmin } = useAuth();
@@ -23,6 +25,7 @@ export const Navbar = ({ setIsSidebarOpen }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [systemHealth, setSystemHealth] = useState(null);
+  const [isTestingSiren, setIsTestingSiren] = useState(false);
 
   const fetchAlerts = async () => {
     try {
@@ -60,6 +63,33 @@ export const Navbar = ({ setIsSidebarOpen }) => {
     }
   };
 
+  const handleClearAllNotifications = async () => {
+    try {
+      await notificationsApi.clearAll();
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (e) {
+      console.error(e);
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  };
+
+  const handleTestSirenSound = () => {
+    if (isTestingSiren) {
+      stopEmergencySiren();
+      setIsTestingSiren(false);
+    } else {
+      enableSiren(true);
+      startEmergencySiren();
+      setIsTestingSiren(true);
+      setTimeout(() => {
+        stopEmergencySiren();
+        setIsTestingSiren(false);
+      }, 4000);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -90,88 +120,19 @@ export const Navbar = ({ setIsSidebarOpen }) => {
 
       {/* Right controls: Health Pill, Model Chip, Notifications, Profile */}
       <div className="flex items-center gap-3 sm:gap-4">
-        {/* Test Siren & Alert Modal Button */}
+        {/* Pure Siren Alarm Audio Test (NO fake alerts/data generated) */}
         <button
           type="button"
-          onClick={() => {
-            const fireTestEvent = (lat, lng, addr) => {
-              let recentSos = null;
-              try {
-                const saved = localStorage.getItem('ser_active_sos');
-                if (saved) recentSos = JSON.parse(saved);
-              } catch {}
-
-              const userSavedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null;
-              const recentPhoto = userSavedPhoto || recentSos?.photo || null;
-              const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
-              const realPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : (!isDummyPhoneNumber(recentSos?.phone) ? recentSos.phone : '');
-              const citizenPhone = realPhone || cleanPhoneNumber('', 'SOS-CITIZEN');
-              const userSavedNotes = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_notes') || '') : '';
-              const alertNotes = userSavedNotes || recentSos?.notes || 'Citizen reported emergency distress call. Immediate rescue dispatched.';
-
-              const userSavedType = typeof window !== 'undefined' ? (localStorage.getItem('ser_selected_distress_type') || recentSos?.emergencyType || recentSos?.type || 'Medical') : 'Medical';
-
-              const testAlert = {
-                id: recentSos?.id || `SOS-${Date.now().toString().slice(-4)}`,
-                type: userSavedType,
-                emergencyType: userSavedType,
-                latitude: recentSos?.latitude || lat,
-                longitude: recentSos?.longitude || lng,
-                address: cleanLocation(recentSos?.address || addr || `Perundurai Road, Erode, Tamil Nadu`),
-                notes: alertNotes,
-                reporter_phone: citizenPhone,
-                phone: citizenPhone,
-                photo: recentPhoto,
-                urgency: 'Critical',
-                timestamp: new Date().toISOString(),
-              };
-              try {
-                localStorage.setItem('ser_active_sos', JSON.stringify(testAlert));
-                if (recentPhoto) {
-                  localStorage.setItem('ser_latest_sos_photo', recentPhoto);
-                  localStorage.setItem(`ser_sos_photo_${testAlert.id}`, recentPhoto);
-                }
-              } catch {}
-              window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: testAlert }));
-            };
-
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition(
-                async (pos) => {
-                  const lat = pos.coords.latitude;
-                  const lng = pos.coords.longitude;
-                  let resolvedAddr = `Perundurai Road, Erode, Tamil Nadu`;
-                  try {
-                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
-                    if (res.ok) {
-                      const data = await res.json();
-                      const parts = [
-                        data.address?.road || data.address?.suburb || data.address?.neighbourhood,
-                        data.address?.city || data.address?.town || data.address?.state_district,
-                      ].filter(Boolean);
-                      if (parts.length > 0) {
-                        resolvedAddr = parts.join(', ');
-                      } else if (data.display_name) {
-                        resolvedAddr = data.display_name.split(',').slice(0, 3).join(',').trim();
-                      }
-                    }
-                  } catch {}
-                  fireTestEvent(lat, lng, resolvedAddr);
-                },
-                () => {
-                  fireTestEvent(11.3410, 77.7172, 'Perundurai Road, Erode, Tamil Nadu');
-                },
-                { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-              );
-            } else {
-              fireTestEvent(11.3410, 77.7172, 'Perundurai Road, Erode, Tamil Nadu');
-            }
-          }}
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono border border-slate-700 transition-colors"
-          title="Test Audio Siren Alarm & Emergency Modal"
+          onClick={handleTestSirenSound}
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono border transition-all ${
+            isTestingSiren
+              ? 'bg-rose-600 text-white border-rose-500 animate-pulse shadow-md shadow-rose-900/50'
+              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+          }`}
+          title="Test Siren Alarm Speaker Audio"
         >
-          <Volume2 className="w-3.5 h-3.5 text-amber-400" />
-          <span>Test Alarm</span>
+          <Volume2 className={`w-3.5 h-3.5 ${isTestingSiren ? 'text-white animate-bounce' : 'text-amber-400'}`} />
+          <span>{isTestingSiren ? 'Testing Siren (4s)...' : 'Test Siren'}</span>
         </button>
 
         {/* Citizen SOS Quick Action */}
@@ -221,14 +182,26 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                 <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
                   System Alerts ({unreadCount} unread)
                 </span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-                  >
-                    Mark read
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-[11px] font-mono text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      Mark read
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={handleClearAllNotifications}
+                      className="text-[11px] font-mono text-rose-400 hover:text-rose-300 flex items-center gap-1 transition-colors"
+                      title="Clear all alerts"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Clear all</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/50">
