@@ -221,7 +221,8 @@ export const IncidentsPage = () => {
                   const userPhone = cleanPhoneNumber(
                     inc.phone_number ||
                     inc.phone ||
-                    (typeof inc.reporter === 'string' && inc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? inc.reporter : '')
+                    (typeof inc.reporter === 'string' && inc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? inc.reporter : ''),
+                    inc.incident_id || inc.id
                   );
                   const cleanAddr = cleanLocation(inc.address);
 

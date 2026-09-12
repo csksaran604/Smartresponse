@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
+import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
 
 // Custom glowing blue radar pin for Citizen's live location
 const citizenPinIcon = L.divIcon({
@@ -314,12 +315,14 @@ export const PublicSosPage = () => {
   // Immediate Transmission
   const transmitEmergencySos = async () => {
     setBroadcasting(true);
-    const cleanPhone = phone.trim();
+    const enteredPhone = phone.trim();
+    const cleanPhone = cleanPhoneNumber(enteredPhone, Date.now());
+    const cleanAddr = cleanLocation(address);
     const emergencyPayload = {
       emergencyType,
       latitude: coords?.lat != null ? Number(coords.lat) : 11.3410,
       longitude: coords?.lng != null ? Number(coords.lng) : 77.7172,
-      address,
+      address: cleanAddr,
       notes: notes.trim(),
       phone: cleanPhone,
       reporter_phone: cleanPhone,

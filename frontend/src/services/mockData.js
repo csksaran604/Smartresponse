@@ -114,17 +114,19 @@ const INITIAL_INCIDENTS = [
     incident_id: 'INC-2026-001',
     date_time: new Date(Date.now() - 25 * 60000).toISOString(),
     created_at: new Date(Date.now() - 25 * 60000).toISOString(),
-    latitude: 40.7282,
-    longitude: -73.9942,
-    address: 'Broadway & 8th St Intersection, NY',
-    description: 'Multi-vehicle impact detected at high-traffic crossing. Human operator verified vehicle damage.',
+    latitude: 11.3410,
+    longitude: 77.7172,
+    address: 'Perundurai Road, Near Collectorate, Erode',
+    description: 'Multi-vehicle impact detected at high-traffic crossing. Citizen caller confirmed vehicle damage.',
     severity: 'High',
     ai_confidence: 89.5,
     verification_status: 'Verified',
     response_status: 'Dispatched',
     assigned_unit_id: 2,
     assigned_unit: INITIAL_UNITS[1],
-    reporter: 'CCTV Feed #12A',
+    reporter: 'Citizen (+91 98401 23456)',
+    phone_number: '+91 98401 23456',
+    phone: '+91 98401 23456',
     verified_by_id: 2,
     verified_by: { username: 'operator' },
     verified_at: new Date(Date.now() - 20 * 60000).toISOString(),
@@ -134,17 +136,19 @@ const INITIAL_INCIDENTS = [
     incident_id: 'INC-2026-002',
     date_time: new Date(Date.now() - 12 * 60000).toISOString(),
     created_at: new Date(Date.now() - 12 * 60000).toISOString(),
-    latitude: 40.7484,
-    longitude: -73.9857,
-    address: 'Midtown Expressway Mile Marker 4, NY',
-    description: 'Overturned vehicle on highway lane 2. Severe obstruction with potential medical distress.',
+    latitude: 11.3524,
+    longitude: 77.7289,
+    address: 'Sathy Road, Veerappanchatram, Erode',
+    description: 'Overturned vehicle on road lane 2. Severe obstruction with potential medical distress.',
     severity: 'Critical',
     ai_confidence: 94.2,
     verification_status: 'Verified',
     response_status: 'En Route',
     assigned_unit_id: 4,
     assigned_unit: INITIAL_UNITS[3],
-    reporter: 'Traffic Bot Camera #44',
+    reporter: 'Citizen (+91 94432 87654)',
+    phone_number: '+91 94432 87654',
+    phone: '+91 94432 87654',
     verified_by_id: 2,
     verified_by: { username: 'operator' },
     verified_at: new Date(Date.now() - 10 * 60000).toISOString(),
@@ -154,16 +158,112 @@ const INITIAL_INCIDENTS = [
     incident_id: 'INC-2026-003',
     date_time: new Date(Date.now() - 4 * 60000).toISOString(),
     created_at: new Date(Date.now() - 4 * 60000).toISOString(),
-    latitude: 40.7180,
-    longitude: -73.9990,
-    address: 'Canal St & Bowery, NY',
+    latitude: 11.3391,
+    longitude: 77.7255,
+    address: 'Brough Road, Near Clock Tower, Erode',
     description: 'Minor rear-end bumper impact. No flames or structural collapse detected.',
     severity: 'Medium',
     ai_confidence: 72.0,
     verification_status: 'Pending',
     response_status: 'Pending',
     assigned_unit_id: null,
-    reporter: 'Municipal Camera #9',
+    reporter: 'Citizen (+91 97890 54321)',
+    phone_number: '+91 97890 54321',
+    phone: '+91 97890 54321',
+  },
+  {
+    id: 4,
+    incident_id: 'INC-2026-004',
+    date_time: new Date(Date.now() - 1 * 86400000 - 4 * 3600000).toISOString(),
+    created_at: new Date(Date.now() - 1 * 86400000 - 4 * 3600000).toISOString(),
+    latitude: 11.3452,
+    longitude: 77.7121,
+    address: 'Chennimalai Road, Overbridge Junction, Erode',
+    description: 'Two-wheeler skid collision reported by bystander. First aid dispatched.',
+    severity: 'High',
+    ai_confidence: 86.4,
+    verification_status: 'Verified',
+    response_status: 'Resolved',
+    assigned_unit_id: 1,
+    assigned_unit: INITIAL_UNITS[0],
+    reporter: 'Citizen (+91 98942 13579)',
+    phone_number: '+91 98942 13579',
+    phone: '+91 98942 13579',
+  },
+  {
+    id: 5,
+    incident_id: 'INC-2026-005',
+    date_time: new Date(Date.now() - 1 * 86400000 - 9 * 3600000).toISOString(),
+    created_at: new Date(Date.now() - 1 * 86400000 - 9 * 3600000).toISOString(),
+    latitude: 11.3590,
+    longitude: 77.7088,
+    address: 'Bhavani Main Road, Chithode Ring Road, Erode',
+    description: 'Commercial lorry breakdown causing severe traffic pile-up and minor collision.',
+    severity: 'Medium',
+    ai_confidence: 91.0,
+    verification_status: 'Verified',
+    response_status: 'Resolved',
+    assigned_unit_id: 2,
+    assigned_unit: INITIAL_UNITS[1],
+    reporter: 'Citizen (+91 94431 98765)',
+    phone_number: '+91 94431 98765',
+    phone: '+91 94431 98765',
+  },
+  {
+    id: 6,
+    incident_id: 'INC-2026-006',
+    date_time: new Date(Date.now() - 2 * 86400000 - 5 * 3600000).toISOString(),
+    created_at: new Date(Date.now() - 2 * 86400000 - 5 * 3600000).toISOString(),
+    latitude: 11.3280,
+    longitude: 77.7312,
+    address: 'Poondurai Road, Near Railway Colony, Erode',
+    description: 'Pedestrian assistance and vehicle side-impact. Immediate ambulance deployment.',
+    severity: 'Critical',
+    ai_confidence: 95.8,
+    verification_status: 'Verified',
+    response_status: 'Resolved',
+    assigned_unit_id: 1,
+    assigned_unit: INITIAL_UNITS[0],
+    reporter: 'Citizen (+91 98422 65432)',
+    phone_number: '+91 98422 65432',
+    phone: '+91 98422 65432',
+  },
+  {
+    id: 7,
+    incident_id: 'INC-2026-007',
+    date_time: new Date(Date.now() - 3 * 86400000 - 3 * 3600000).toISOString(),
+    created_at: new Date(Date.now() - 3 * 86400000 - 3 * 3600000).toISOString(),
+    latitude: 11.3365,
+    longitude: 77.7198,
+    address: 'Gandhiji Road, Near PS Park, Erode',
+    description: 'Side-mirror scrape between city bus and auto-rickshaw. No injuries reported.',
+    severity: 'Low',
+    ai_confidence: 78.2,
+    verification_status: 'Verified',
+    response_status: 'Resolved',
+    assigned_unit_id: null,
+    reporter: 'Citizen (+91 97910 87654)',
+    phone_number: '+91 97910 87654',
+    phone: '+91 97910 87654',
+  },
+  {
+    id: 8,
+    incident_id: 'INC-2026-008',
+    date_time: new Date(Date.now() - 4 * 86400000 - 7 * 3600000).toISOString(),
+    created_at: new Date(Date.now() - 4 * 86400000 - 7 * 3600000).toISOString(),
+    latitude: 11.3488,
+    longitude: 77.7350,
+    address: 'Meenatchi Sundaranar Road, Near Bus Stand, Erode',
+    description: 'Delivery vehicle slide on wet pavement. Traffic patrol cleared obstruction.',
+    severity: 'High',
+    ai_confidence: 88.0,
+    verification_status: 'Verified',
+    response_status: 'Resolved',
+    assigned_unit_id: 2,
+    assigned_unit: INITIAL_UNITS[1],
+    reporter: 'Citizen (+91 98405 11223)',
+    phone_number: '+91 98405 11223',
+    phone: '+91 98405 11223',
   }
 ];
 
@@ -171,7 +271,7 @@ const INITIAL_NOTIFICATIONS = [
   {
     id: 1,
     title: 'CRITICAL: Severe Rollover Incident Verified',
-    message: 'INC-2026-002 on Midtown Expressway verified by operator. Unit POL-202 en route.',
+    message: 'INC-2026-002 on Sathy Road, Veerappanchatram verified by operator. Unit POL-202 en route.',
     type: 'Critical',
     is_read: false,
     created_at: new Date(Date.now() - 10 * 60000).toISOString(),
@@ -179,7 +279,7 @@ const INITIAL_NOTIFICATIONS = [
   {
     id: 2,
     title: 'New AI Incident Detection Ticket',
-    message: 'High confidence collision detected at Canal St & Bowery. Awaiting human verification.',
+    message: 'High confidence collision detected at Brough Road, Clock Tower. Awaiting human verification.',
     type: 'Warning',
     is_read: false,
     created_at: new Date(Date.now() - 4 * 60000).toISOString(),
@@ -200,7 +300,7 @@ const INITIAL_LOGS = [
 ];
 
 export function cleanLocation(addr) {
-  if (!addr || typeof addr !== 'string') return 'Location Verified';
+  if (!addr || typeof addr !== 'string') return 'Perundurai Road, Erode, Tamil Nadu';
   let cleaned = addr
     .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
     .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
@@ -215,19 +315,39 @@ export function cleanLocation(addr) {
   return cleaned;
 }
 
-export function cleanPhoneNumber(phone) {
-  if (!phone || typeof phone !== 'string') return '';
-  const trimmed = phone.trim();
-  if (
-    trimmed === '+91-98765-TEST0' ||
-    trimmed === 'Citizen Mobile Caller' ||
-    trimmed === 'Citizen Mobile SOS' ||
-    trimmed === 'Citizen' ||
-    trimmed.toLowerCase().includes('test0')
-  ) {
-    return '';
+export const REALISTIC_CITIZEN_PHONES = [
+  '+91 98401 23456',
+  '+91 94432 87654',
+  '+91 97890 54321',
+  '+91 98942 13579',
+  '+91 94431 98765',
+  '+91 98422 65432',
+  '+91 97910 87654',
+  '+91 98405 11223',
+];
+
+export function cleanPhoneNumber(phone, fallbackSeed = '') {
+  if (phone && typeof phone === 'string') {
+    const trimmed = phone.trim();
+    const isTestOrGeneric = (
+      trimmed.toLowerCase().includes('test0') ||
+      trimmed === 'Citizen Mobile Caller' ||
+      trimmed === 'Citizen Mobile SOS' ||
+      trimmed === 'Citizen' ||
+      trimmed === 'Citizen Direct' ||
+      trimmed === 'Not Provided'
+    );
+    if (!isTestOrGeneric && /\d{6,}/.test(trimmed)) {
+      return trimmed;
+    }
   }
-  return trimmed;
+  // Assign deterministic realistic citizen mobile number from pool
+  let hash = 0;
+  const str = String(fallbackSeed || 'INC-101');
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) % REALISTIC_CITIZEN_PHONES.length;
+  }
+  return REALISTIC_CITIZEN_PHONES[Math.abs(hash) % REALISTIC_CITIZEN_PHONES.length];
 }
 
 function getStored(key, fallback) {
@@ -251,31 +371,46 @@ export const mockDb = {
   getIncidents: () => {
     const raw = getStored(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS);
     let mutated = false;
-    const sanitized = raw.map((inc) => {
+    let source = Array.isArray(raw) && raw.length >= 3 ? raw : INITIAL_INCIDENTS;
+
+    const sanitized = source.map((inc, idx) => {
       let changed = false;
       let newAddress = inc.address;
       if (typeof inc.address === 'string' && (inc.address.includes('Live Tested') || inc.address.includes('GPS Position (±'))) {
         newAddress = cleanLocation(inc.address);
         changed = true;
       }
-      let newPhone = inc.phone_number || inc.phone || '';
-      let newReporter = inc.reporter || '';
-      if (newReporter.includes('TEST0') || newReporter === 'Citizen Mobile Caller' || newReporter === 'Citizen Mobile SOS') {
-        newReporter = 'Citizen';
+      let currentPhone = inc.phone_number || inc.phone || '';
+      const validPhone = cleanPhoneNumber(currentPhone, inc.incident_id || inc.id || idx);
+      if (validPhone !== currentPhone) {
+        currentPhone = validPhone;
         changed = true;
       }
-      if (newPhone.includes('TEST0')) {
-        newPhone = '';
+      let newReporter = inc.reporter || '';
+      if (!newReporter || newReporter.includes('TEST0') || newReporter === 'Citizen Mobile Caller' || newReporter === 'Citizen Mobile SOS' || newReporter === 'Citizen') {
+        newReporter = `Citizen (${currentPhone})`;
         changed = true;
       }
       if (changed) mutated = true;
       return {
         ...inc,
         address: newAddress,
-        phone_number: newPhone,
+        phone_number: currentPhone,
+        phone: currentPhone,
         reporter: newReporter,
       };
     });
+
+    // Ensure all 8 initial multi-day records are present if user only has 3 legacy records
+    if (sanitized.length < INITIAL_INCIDENTS.length) {
+      INITIAL_INCIDENTS.forEach((initInc) => {
+        if (!sanitized.some((s) => s.incident_id === initInc.incident_id)) {
+          sanitized.push(initInc);
+          mutated = true;
+        }
+      });
+    }
+
     if (mutated) {
       setStored(STORAGE_KEYS.INCIDENTS, sanitized);
     }
@@ -405,6 +540,7 @@ function mockResponse(data, status = 200, statusText = 'OK') {
 export async function handleMockRequest(config) {
   const url = (config.url || '').split('?')[0].replace(/^\/api/, '');
   const method = (config.method || 'get').toLowerCase();
+  const params = config.params || {};
   
   let body = config.data;
   if (typeof body === 'string') {
@@ -851,6 +987,13 @@ export async function handleMockRequest(config) {
       const d = inc.date_time ? inc.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
       dailyMap[d] = (dailyMap[d] || 0) + 1;
     });
+    // Ensure rolling 5-day trend coverage
+    for (let i = 4; i >= 0; i--) {
+      const dayStr = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+      if (!dailyMap[dayStr]) {
+        dailyMap[dayStr] = i === 0 ? Math.max(1, list.length) : [2, 4, 1, 3][i % 4];
+      }
+    }
     const dailyBreakdown = Object.entries(dailyMap)
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -917,6 +1060,12 @@ export async function handleMockRequest(config) {
       const d = inc.date_time ? inc.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
       dailyMap[d] = (dailyMap[d] || 0) + 1;
     });
+    for (let i = 4; i >= 0; i--) {
+      const dayStr = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+      if (!dailyMap[dayStr]) {
+        dailyMap[dayStr] = i === 0 ? Math.max(1, list.length) : [2, 4, 1, 3][i % 4];
+      }
+    }
     const dailyData = Object.entries(dailyMap)
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));

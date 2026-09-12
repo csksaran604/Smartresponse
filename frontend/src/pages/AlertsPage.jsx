@@ -234,7 +234,10 @@ export const AlertsPage = () => {
             const address = cleanLocation(n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : ''));
             const photo = n.photo || matchedInc?.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${n.incident_id || n.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
-            const citizenPhone = cleanPhoneNumber(matchedInc?.phone_number || matchedInc?.phone || (typeof matchedInc?.reporter === 'string' && matchedInc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? matchedInc.reporter : '') || n.reporter_phone || '');
+            const citizenPhone = cleanPhoneNumber(
+              matchedInc?.phone_number || matchedInc?.phone || (typeof matchedInc?.reporter === 'string' && matchedInc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? matchedInc.reporter : '') || n.reporter_phone || '',
+              matchedInc?.incident_id || n.incident_id || n.id
+            );
             const displayMessage = (n.message || '')
               .replace(/Live Tested [^\-]+-\s*/gi, '')
               .replace(/\+91-98765-TEST0/g, citizenPhone || 'Not Provided')

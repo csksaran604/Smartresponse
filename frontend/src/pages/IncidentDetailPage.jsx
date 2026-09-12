@@ -186,7 +186,8 @@ export const IncidentDetailPage = () => {
               const userPhone = cleanPhoneNumber(
                 incident.phone_number ||
                 incident.phone ||
-                (typeof incident.reporter === 'string' && incident.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? incident.reporter : '')
+                (typeof incident.reporter === 'string' && incident.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? incident.reporter : ''),
+                incident.incident_id || incident.id
               );
 
               return (
