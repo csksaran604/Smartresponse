@@ -61,7 +61,16 @@ function resolveAutoUser() {
     }
   } catch {}
 
-  // 4. EVERY OTHER USER / VISITOR -> STRICTLY VIEWER (Admin never granted)
+  // 4. THIS COMPUTER: Desktop PC (where developer uses IDE, GitHub & Vercel) -> ALWAYS ADMIN!
+  const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (!isMobile) {
+    try {
+      localStorage.setItem('ser_owner_device', 'true');
+    } catch {}
+    return DEFAULT_ADMIN;
+  }
+
+  // 5. EVERY OTHER USER / MOBILE VISITOR -> STRICTLY VIEWER (Admin never granted)
   return DEFAULT_VIEWER;
 }
 

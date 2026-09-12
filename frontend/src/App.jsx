@@ -19,6 +19,15 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
+// Smart Root Route: Mobile phones go directly to Citizen SOS portal, Desktop goes to Operator Dashboard
+const RootRoute = () => {
+  const isMobile = typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (isMobile) {
+    return <Navigate to="/sos" replace />;
+  }
+  return <DashboardPage />;
+};
+
 function App() {
   return (
     <AuthProvider>
@@ -31,15 +40,15 @@ function App() {
           <Route path="/sos" element={<PublicSosPage />} />
           <Route path="/citizen" element={<PublicSosPage />} />
 
-          {/* Login/Register routes bypass directly to Dashboard */}
-          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+          {/* Login/Register routes bypass directly */}
+          <Route path="/login" element={<RootRoute />} />
+          <Route path="/register" element={<RootRoute />} />
 
           {/* Operations Center - Auto-authenticated (Admin for owner, Viewer for others) */}
           <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMERGENCY_OPERATOR', 'VIEWER']} />}>
             <Route element={<DashboardLayout />}>
+              <Route path="/" element={<RootRoute />} />
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/" element={<DashboardPage />} />
               <Route path="/portal" element={<CitizenPortalPage />} />
               <Route path="/detection" element={<AccidentDetectionPage />} />
               <Route path="/incidents" element={<IncidentsPage />} />
@@ -53,8 +62,8 @@ function App() {
             </Route>
           </Route>
 
-          {/* Catch-all redirect to Dashboard */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          {/* Catch-all redirect */}
+          <Route path="*" element={<RootRoute />} />
         </Routes>
       </Router>
     </AuthProvider>

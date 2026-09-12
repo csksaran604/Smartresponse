@@ -164,30 +164,26 @@ export const EmergencyAlertModal = () => {
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
 
-      // Check if user uploaded photo exists
-      const userUploadedPhoto = localStorage.getItem('ser_user_uploaded_photo') || null;
-      if (userUploadedPhoto) {
-        incomingAlert.photo = userUploadedPhoto;
-      } else if (!incomingAlert.photo) {
-        try {
-          const cachedPhoto = localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
-          if (cachedPhoto) incomingAlert.photo = cachedPhoto;
-        } catch {}
-      }
-
-      const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-      const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
-      const rawPhone = realSavedPhone || (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') || (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '') || '';
-      const userPhone = rawPhone || cleanPhoneNumber('', incomingAlert.id);
+      // The incoming remote mobile citizen's data takes absolute precedence:
+      const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
       const cleanAddr = cleanLocation(incomingAlert.address);
-      const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
-      const alertType = incomingAlert.emergencyType || incomingAlert.type || userSelectedType || 'Medical';
+
+      // 1. Mobile citizen's phone number
+      const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
+                          (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
+      const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
+
+      // 2. Mobile citizen's photo
+      const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || null;
 
       incomingAlert.reporter_phone = userPhone;
       incomingAlert.phone = userPhone;
       incomingAlert.type = alertType;
       incomingAlert.emergencyType = alertType;
       incomingAlert.address = cleanAddr;
+      if (remotePhoto) {
+        incomingAlert.photo = remotePhoto;
+      }
 
       setActiveAlert(incomingAlert);
 
@@ -230,24 +226,19 @@ export const EmergencyAlertModal = () => {
     const handleDirectSos = (e) => {
       if (e.detail) {
         const incomingAlert = { ...e.detail };
-        if (!incomingAlert.photo) {
-          try {
-            const cachedPhoto = localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_latest_sos_photo');
-            if (cachedPhoto) incomingAlert.photo = cachedPhoto;
-          } catch {}
-        }
-        const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-        const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
-        const rawPhone = realSavedPhone || (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') || (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '') || '';
-        const userPhone = rawPhone || cleanPhoneNumber('', incomingAlert.id);
-        const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
-        const alertType = incomingAlert.emergencyType || incomingAlert.type || userSelectedType || 'Medical';
+        const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
+        const cleanAddr = cleanLocation(incomingAlert.address);
+        const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
+                            (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
+        const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
+        const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${incomingAlert.id}`) || localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null);
 
         incomingAlert.reporter_phone = userPhone;
         incomingAlert.phone = userPhone;
         incomingAlert.type = alertType;
         incomingAlert.emergencyType = alertType;
-        incomingAlert.address = cleanLocation(incomingAlert.address);
+        incomingAlert.address = cleanAddr;
+        if (alertPhoto) incomingAlert.photo = alertPhoto;
 
         setActiveAlert(incomingAlert);
         // Siren sound silenced by default
@@ -339,8 +330,7 @@ export const EmergencyAlertModal = () => {
     Fire: Flame,
     Traffic: AlertTriangle,
   };
-  const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
-  const distressType = activeAlert.emergencyType || activeAlert.type || userSelectedType || (
+  const distressType = activeAlert.emergencyType || activeAlert.type || (
     activeAlert.notes && /traffic|crash|collision/i.test(activeAlert.notes) ? 'Traffic' :
     activeAlert.notes && /police|crime/i.test(activeAlert.notes) ? 'Police' :
     activeAlert.notes && /fire/i.test(activeAlert.notes) ? 'Fire' :
@@ -349,13 +339,14 @@ export const EmergencyAlertModal = () => {
   );
   const AlertIcon = typeIcons[distressType] || Ambulance;
 
-  const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-  const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
-  const rawPhone = realSavedPhone || (!isDummyPhoneNumber(activeAlert.reporter_phone) ? activeAlert.reporter_phone : '') || (!isDummyPhoneNumber(activeAlert.phone) ? activeAlert.phone : '') || '';
-  const callerPhone = rawPhone || cleanPhoneNumber('', activeAlert.id);
+  // Remote Citizen phone takes first priority:
+  const remotePhone = (!isDummyPhoneNumber(activeAlert.reporter_phone) ? activeAlert.reporter_phone : '') ||
+                      (!isDummyPhoneNumber(activeAlert.phone) ? activeAlert.phone : '');
+  const callerPhone = remotePhone || cleanPhoneNumber('', activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
-  const userUploadedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null;
-  const displayPhoto = userUploadedPhoto || activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
+
+  // Remote Citizen photo takes first priority:
+  const displayPhoto = activeAlert.photo || activeAlert.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null);
 
   const cleanDisplayAddress = cleanLocation(activeAlert.address);
 
