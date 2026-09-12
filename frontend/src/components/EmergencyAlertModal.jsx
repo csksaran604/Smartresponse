@@ -24,8 +24,9 @@ import {
 } from 'lucide-react';
 import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
-import { startEmergencySiren, stopEmergencySiren } from '../utils/sirenSound';
+import { startEmergencySiren, stopEmergencySiren, enableSiren } from '../utils/sirenSound';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from '../services/mockData';
+import { useAuth } from '../context/AuthContext';
 
 // Custom Map Markers
 const accidentMarkerIcon = L.divIcon({
@@ -89,8 +90,16 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 
 export const EmergencyAlertModal = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [activeAlert, setActiveAlert] = useState(null);
-  const [isMuted, setIsMuted] = useState(true); // Alarm sound OFF/silenced by default per user request
+  const [isMuted, setIsMuted] = useState(true);
+
+  // Keep ref updated to current role without closure race conditions
+  const isAdminRef = useRef(isAdmin);
+  useEffect(() => {
+    const isOwner = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+    isAdminRef.current = Boolean(isOwner);
+  }, [isAdmin]);
 
   // Operator / Responder Live Location
   const [responderLocation, setResponderLocation] = useState(null);
@@ -165,7 +174,17 @@ export const EmergencyAlertModal = () => {
 
       setActiveAlert(incomingAlert);
 
-      // Alarm audio siren remains OFF/silenced by default
+      // Emergency Siren: Audible ONLY for Admin device
+      const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+      if (isOwnerAdmin) {
+        enableSiren(true);
+        startEmergencySiren();
+        setIsMuted(false);
+      } else {
+        stopEmergencySiren();
+        enableSiren(false);
+        setIsMuted(true);
+      }
 
       // Desktop browser notification
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -219,6 +238,18 @@ export const EmergencyAlertModal = () => {
         incomingAlert.photo = alertPhoto;
 
         setActiveAlert(incomingAlert);
+
+        // Emergency Siren: Audible ONLY for Admin device
+        const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+        if (isOwnerAdmin) {
+          enableSiren(true);
+          startEmergencySiren();
+          setIsMuted(false);
+        } else {
+          stopEmergencySiren();
+          enableSiren(false);
+          setIsMuted(true);
+        }
       }
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
@@ -282,6 +313,7 @@ export const EmergencyAlertModal = () => {
 
   const handleToggleMute = () => {
     if (isMuted) {
+      enableSiren(true);
       startEmergencySiren();
       setIsMuted(false);
     } else {

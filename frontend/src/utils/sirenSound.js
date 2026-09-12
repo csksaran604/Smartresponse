@@ -9,7 +9,7 @@ let oscillator = null;
 let gainNode = null;
 let isSirenPlaying = false;
 let lfo = null;
-let sirenDisabled = true; // Alarm sound silenced/disabled per user request
+let sirenDisabled = false; // Enabled for authorized Admin alerts
 
 function getAudioContext() {
   if (!audioCtx) {
@@ -19,18 +19,33 @@ function getAudioContext() {
     }
   }
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().catch(() => {});
   }
   return audioCtx;
 }
 
-export function enableSiren(enabled = false) {
+// Pre-unlock AudioContext on first user interaction so siren can sound immediately
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+    } catch {}
+  };
+  window.addEventListener('click', unlockAudio, { passive: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  window.addEventListener('keydown', unlockAudio, { passive: true });
+}
+
+export function enableSiren(enabled = true) {
   sirenDisabled = !enabled;
   if (sirenDisabled) stopEmergencySiren();
 }
 
 /**
- * Starts the emergency siren alarm (kept silent by default)
+ * Starts the emergency siren alarm (played exclusively for Admin)
  */
 export function startEmergencySiren() {
   if (sirenDisabled || isSirenPlaying) return;
@@ -38,6 +53,9 @@ export function startEmergencySiren() {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
 
     // Main oscillator for siren tone
     oscillator = ctx.createOscillator();
@@ -46,7 +64,7 @@ export function startEmergencySiren() {
 
     // Gain node for volume
     gainNode = ctx.createGain();
-    gainNode.gain.setValueAtTime(0.18, ctx.currentTime);
+    gainNode.gain.setValueAtTime(0.22, ctx.currentTime);
 
     // LFO (Low Frequency Oscillator) to modulate frequency (wailing effect)
     lfo = ctx.createOscillator();
@@ -54,7 +72,7 @@ export function startEmergencySiren() {
     lfo.frequency.value = 1.8; // Modulation speed (cycles per second)
 
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 220; // Sweep range (+/- 220 Hz between 530Hz and 970Hz)
+    lfoGain.gain.value = 240; // Sweep range (+/- 240 Hz between 510Hz and 990Hz)
 
     // Connect LFO -> oscillator frequency
     lfo.connect(lfoGain);
