@@ -218,7 +218,7 @@ export const CitizenPortalPage = () => {
         } catch {}
       }
 
-      const alertId = `SOS-${Date.now().toString().slice(-6)}`;
+      const alertId = `SOS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
       const photoToUse = base64Photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null);
 
       if (photoToUse && typeof window !== 'undefined') {

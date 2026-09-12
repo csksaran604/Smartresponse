@@ -349,7 +349,7 @@ export const PublicSosPage = () => {
     const finalPhoto = capturedPhoto || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null);
     const cleanAddr = cleanLocation(address);
     const emergencyPayload = {
-      id: `SOS-${Date.now().toString().slice(-6)}`,
+      id: `SOS-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       type: emergencyType,
       emergencyType,
       latitude: coords?.lat != null ? Number(coords.lat) : 11.3410,

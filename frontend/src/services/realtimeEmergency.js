@@ -30,7 +30,10 @@ export function isAlertDismissed(id) {
     const raw = localStorage.getItem('ser_dismissed_alerts');
     if (!raw) return false;
     const dismissed = JSON.parse(raw);
-    return Array.isArray(dismissed) && (dismissed.includes(String(id)) || dismissed.includes(Number(id)));
+    if (!Array.isArray(dismissed)) return false;
+    const strId = String(id).trim();
+    if (!strId) return false;
+    return dismissed.some((d) => d != null && String(d).trim() === strId);
   } catch {
     return false;
   }
@@ -44,7 +47,7 @@ export function markAlertDismissed(id) {
   try {
     const raw = localStorage.getItem('ser_dismissed_alerts');
     const dismissed = raw ? JSON.parse(raw) : [];
-    const strId = String(id);
+    const strId = String(id).trim();
     if (Array.isArray(dismissed) && !dismissed.includes(strId)) {
       dismissed.push(strId);
       localStorage.setItem('ser_dismissed_alerts', JSON.stringify(dismissed.slice(-100)));
@@ -52,7 +55,7 @@ export function markAlertDismissed(id) {
     const active = localStorage.getItem('ser_active_sos');
     if (active) {
       const parsed = JSON.parse(active);
-      if (parsed?.id === id || String(parsed?.id) === strId) {
+      if (parsed?.id && String(parsed.id).trim() === strId) {
         localStorage.removeItem('ser_active_sos');
       }
     }
@@ -60,7 +63,7 @@ export function markAlertDismissed(id) {
 }
 
 /**
- * Checks cloud relays for the latest undismissed emergency message within last 15 minutes
+ * Checks cloud relays for the latest undismissed emergency message
  */
 export async function checkPendingCloudAlert() {
   for (const host of RELAY_HOSTS) {
@@ -80,14 +83,7 @@ export async function checkPendingCloudAlert() {
             if (raw.event !== 'message') continue;
             const alert = parseRawMessage(raw);
             if (alert && alert.id && !isAlertDismissed(alert.id)) {
-              if (alert.timestamp) {
-                const age = Date.now() - new Date(alert.timestamp).getTime();
-                if (age < 15 * 60 * 1000) {
-                  return alert;
-                }
-              } else {
-                return alert;
-              }
+              return alert;
             }
           } catch {}
         }
@@ -162,7 +158,7 @@ export async function uploadPhotoToCloud(photo) {
  */
 export async function broadcastEmergencySos(alertData) {
   const rawPhoto = alertData.photo || alertData.photo_url || null;
-  const alertId = alertData.id || `SOS-${Date.now().toString().slice(-6)}`;
+  const alertId = alertData.id || `SOS-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 
   // Cache photo locally on reporting device
   if (rawPhoto) {
@@ -350,15 +346,6 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     if (!alert || !alert.id) return;
     if (isAlertDismissed(alert.id)) return;
     if (processedAlertIds.has(alert.id)) return;
-
-    // Check alert age: support up to 15 minutes so freshly reported emergencies show reliably
-    if (alert.timestamp) {
-      const alertTime = new Date(alert.timestamp).getTime();
-      if (Date.now() - alertTime > 15 * 60 * 1000) {
-        processedAlertIds.add(alert.id);
-        return;
-      }
-    }
 
     processedAlertIds.add(alert.id);
     console.log('[SER Relay] 🚨 INCOMING SOS RECEIVED ON ADMIN DISPATCH:', alert);
