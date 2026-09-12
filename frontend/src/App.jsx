@@ -6,8 +6,6 @@ import { DashboardLayout } from './layouts/DashboardLayout';
 import { EmergencyAlertModal } from './components/EmergencyAlertModal';
 
 // Pages
-import { LoginPage } from './pages/LoginPage';
-import { RegisterPage } from './pages/RegisterPage';
 import { PublicSosPage } from './pages/PublicSosPage';
 import { CitizenPortalPage } from './pages/CitizenPortalPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -18,8 +16,6 @@ import { LiveMapPage } from './pages/LiveMapPage';
 import { EmergencyUnitsPage } from './pages/EmergencyUnitsPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { UsersPage } from './pages/UsersPage';
-import { AuditLogsPage } from './pages/AuditLogsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
@@ -31,14 +27,16 @@ function App() {
         <EmergencyAlertModal />
 
         <Routes>
-          {/* Public Routes (Zero Login Required for SOS and Citizen Help) */}
+          {/* Public Citizen SOS Portals */}
           <Route path="/sos" element={<PublicSosPage />} />
           <Route path="/citizen" element={<PublicSosPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
 
-          {/* Protected Routes strictly for Authorized Operator / Admin */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMERGENCY_OPERATOR']} />}>
+          {/* Login/Register routes bypass directly to Dashboard */}
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+
+          {/* Operations Center - Auto-authenticated (Admin for owner, Viewer for others) */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMERGENCY_OPERATOR', 'VIEWER']} />}>
             <Route element={<DashboardLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/" element={<DashboardPage />} />
@@ -52,17 +50,11 @@ function App() {
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/settings" element={<SettingsPage />} />
-
-              {/* Admin-only Routes */}
-              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/audit-logs" element={<AuditLogsPage />} />
-              </Route>
             </Route>
           </Route>
 
-          {/* Catch-all redirect to public SOS */}
-          <Route path="*" element={<Navigate to="/sos" replace />} />
+          {/* Catch-all redirect to Dashboard */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
     </AuthProvider>

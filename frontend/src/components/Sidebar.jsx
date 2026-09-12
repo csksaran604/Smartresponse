@@ -8,20 +8,16 @@ import {
   Ambulance,
   Bell,
   BarChart3,
-  Users,
-  ShieldCheck,
   UserCheck,
   Settings,
-  Flame,
   Radio
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const Sidebar = ({ isOpen, setIsOpen }) => {
-  const { user, isAdmin, isOperator } = useAuth();
+  const { user, isAdmin } = useAuth();
 
   const mainLinks = [
-    { to: '/citizen', label: 'Citizen SOS & Help', icon: Radio, badge: 'SOS' },
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/map', label: 'Live GPS Map', icon: MapPin },
     { to: '/detection', label: 'AI Detection', icon: ScanEye, badge: 'AI' },
@@ -29,11 +25,7 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
     { to: '/units', label: 'Emergency Units', icon: Ambulance },
     { to: '/alerts', label: 'Alerts', icon: Bell },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
-  ];
-
-  const adminLinks = [
-    { to: '/users', label: 'User Management', icon: Users },
-    { to: '/audit-logs', label: 'Audit Logs', icon: ShieldCheck },
+    { to: '/citizen', label: 'Citizen SOS & Help', icon: Radio, badge: 'SOS' },
   ];
 
   const accountLinks = [
@@ -108,37 +100,6 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
             </nav>
           </div>
 
-          {/* Admin Administration */}
-          {isAdmin && (
-            <div>
-              <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 font-mono mb-2">
-                Administration
-              </div>
-              <nav className="space-y-1">
-                {adminLinks.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setIsOpen(false)}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                          isActive
-                            ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                            : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
-                        }`
-                      }
-                    >
-                      <Icon className="w-4 h-4 text-slate-400" />
-                      <span>{item.label}</span>
-                    </NavLink>
-                  );
-                })}
-              </nav>
-            </div>
-          )}
-
           {/* Preferences */}
           <div>
             <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 font-mono mb-2">
@@ -172,12 +133,16 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
         {/* Current User Session Strip */}
         <div className="p-4 border-t border-slate-800 bg-slate-950/50">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-rose-400 uppercase">
-              {user?.username ? user.username.slice(0, 2) : 'OP'}
+            <div className={`w-8 h-8 rounded-full border flex items-center justify-center font-bold text-xs uppercase ${
+              isAdmin ? 'bg-rose-950/60 border-rose-600/50 text-rose-400' : 'bg-blue-950/60 border-blue-600/50 text-blue-400'
+            }`}>
+              {isAdmin ? 'AD' : 'VW'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-white truncate">{user?.full_name || 'Operator'}</p>
-              <p className="text-[10px] text-slate-400 font-mono uppercase truncate">{user?.role || 'VIEWER'}</p>
+              <p className="text-xs font-medium text-white truncate">{user?.full_name || (isAdmin ? 'Admin' : 'Viewer')}</p>
+              <p className="text-[10px] text-slate-400 font-mono uppercase truncate">
+                Role: <span className={isAdmin ? 'text-rose-400 font-bold' : 'text-blue-400 font-bold'}>{user?.role || 'VIEWER'}</span>
+              </p>
             </div>
           </div>
         </div>

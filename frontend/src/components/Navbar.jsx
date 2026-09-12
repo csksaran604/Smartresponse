@@ -16,7 +16,7 @@ import { formatDateTime } from '../utils/dateUtils';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
-  const { user, logout } = useAuth();
+  const { user, isAdmin, toggleRole } = useAuth();
   const navigate = useNavigate();
 
   const [notifications, setNotifications] = useState([]);
@@ -278,27 +278,36 @@ export const Navbar = ({ setIsSidebarOpen }) => {
           )}
         </div>
 
-        {/* User Account Controls */}
+        {/* User Account & 1-Click Role Switcher */}
         <div className="flex items-center gap-2 border-l border-slate-800 pl-3">
-          <Link
-            to="/profile"
-            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-800/60 transition-colors"
+          <button
+            type="button"
+            onClick={toggleRole}
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer ${
+              isAdmin
+                ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20 text-rose-300'
+                : 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 text-blue-300'
+            }`}
+            title={`Current Role: ${user?.role || (isAdmin ? 'ADMIN' : 'VIEWER')}. Tap to switch to ${isAdmin ? 'VIEWER' : 'ADMIN'}`}
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md">
-              <UserIcon className="w-4 h-4" />
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white shadow-md ${
+              isAdmin ? 'bg-gradient-to-br from-rose-500 to-amber-600 shadow-rose-950/50' : 'bg-gradient-to-br from-blue-500 to-cyan-600 shadow-blue-950/50'
+            }`}>
+              {isAdmin ? 'A' : 'V'}
             </div>
             <div className="hidden sm:block text-left">
-              <p className="text-xs font-semibold text-slate-200 leading-tight">{user?.username}</p>
-              <p className="text-[10px] font-mono text-slate-400 capitalize">{user?.role?.toLowerCase()}</p>
+              <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
+                <span className="text-slate-200">{user?.username || (isAdmin ? 'Admin' : 'Viewer')}</span>
+                <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold uppercase ${
+                  isAdmin ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                }`}>
+                  {user?.role || (isAdmin ? 'ADMIN' : 'VIEWER')}
+                </span>
+              </p>
+              <p className="text-[10px] font-mono text-slate-400">
+                Tap to toggle role
+              </p>
             </div>
-          </Link>
-
-          <button
-            onClick={handleLogout}
-            title="Sign Out"
-            className="p-2 rounded-lg bg-slate-800/40 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-transparent hover:border-rose-500/30 transition-all"
-          >
-            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

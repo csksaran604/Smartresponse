@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Send,
   Lock,
+  LayoutDashboard,
   Crosshair,
   Layers,
   Info,
@@ -428,14 +429,14 @@ export const PublicSosPage = () => {
           </div>
         </div>
 
-        {/* Discreet Dispatch Terminal Login */}
+        {/* Emergency Dispatch Operations Dashboard */}
         <Link
-          to="/login"
-          className="text-xs font-mono text-slate-400 hover:text-white px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-1.5 transition-colors"
-          title="Authorized Dispatch Personnel Login"
+          to="/dashboard"
+          className="text-xs font-mono text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
+          title="Open Emergency Operations Dashboard"
         >
-          <Lock className="w-3.5 h-3.5 text-slate-400" />
-          <span className="hidden sm:inline">Operator</span>
+          <LayoutDashboard className="w-3.5 h-3.5 text-rose-400" />
+          <span className="font-semibold">Dashboard</span>
         </Link>
       </header>
 
