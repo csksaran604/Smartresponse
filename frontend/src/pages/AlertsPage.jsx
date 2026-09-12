@@ -33,6 +33,7 @@ export const AlertsPage = () => {
   const [filterSeverity, setFilterSeverity] = useState('');
   const [filterUnreadOnly, setFilterUnreadOnly] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -144,31 +145,96 @@ export const AlertsPage = () => {
     }
   };
 
-  const handleDeleteAlert = async (id) => {
+  const handleDeleteAlert = async (idOrNotif) => {
+    const id = typeof idOrNotif === 'object' ? idOrNotif.id : idOrNotif;
+    const notifObj = typeof idOrNotif === 'object' ? idOrNotif : notifications.find((item) => item.id === id);
     try {
       await notificationsApi.deleteNotification(id);
+      // Also delete corresponding accident so it is removed from Reports!
+      const linkedId = notifObj?.incident_id || notifObj?.id || (notifObj?.incident_code ? incidentsMap[notifObj?.incident_code]?.id : null);
+      if (linkedId) {
+        try { await accidentsApi.deleteAccident(linkedId); } catch {}
+      }
+      if (notifObj?.address) {
+        const matchedAcc = Object.values(incidentsMap).find((a) =>
+          a.address === notifObj.address ||
+          (a.latitude === notifObj.latitude && a.longitude === notifObj.longitude)
+        );
+        if (matchedAcc?.id) {
+          try { await accidentsApi.deleteAccident(matchedAcc.id); } catch {}
+        }
+      }
       setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
       setUnreadCount((c) => Math.max(0, c - 1));
     } catch (e) {
       console.error('Delete alert error:', e);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setSelectedIds((prev) => prev.filter((item) => item !== id));
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Delete ${selectedIds.length} selected alert(s) and clear them from Reports?`)) return;
+
+    for (const id of selectedIds) {
+      const notifObj = notifications.find((n) => n.id === id);
+      try {
+        await notificationsApi.deleteNotification(id);
+      } catch {}
+      const linkedId = notifObj?.incident_id || notifObj?.id || (notifObj?.incident_code ? incidentsMap[notifObj?.incident_code]?.id : null);
+      if (linkedId) {
+        try { await accidentsApi.deleteAccident(linkedId); } catch {}
+      }
+      if (notifObj?.address) {
+        const matchedAcc = Object.values(incidentsMap).find((a) =>
+          a.address === notifObj.address ||
+          (a.latitude === notifObj.latitude && a.longitude === notifObj.longitude)
+        );
+        if (matchedAcc?.id) {
+          try { await accidentsApi.deleteAccident(matchedAcc.id); } catch {}
+        }
+      }
+    }
+    setNotifications((prev) => prev.filter((n) => !selectedIds.includes(n.id)));
+    setUnreadCount((c) => Math.max(0, c - selectedIds.length));
+    setSelectedIds([]);
+  };
+
   const handleClearAllAlerts = async () => {
-    if (!window.confirm('Are you sure you want to delete all old alerts?')) return;
+    if (!window.confirm('Are you sure you want to delete ALL alerts and clear all incidents from Reports?')) return;
     try {
       await notificationsApi.clearAll();
+      await accidentsApi.clearAllAccidents();
       setNotifications([]);
+      setSelectedIds([]);
       setUnreadCount(0);
       try {
         localStorage.removeItem('ser_active_sos');
+        localStorage.removeItem('ser_last_dispatched_accident');
       } catch {}
     } catch (e) {
       console.error('Clear all error:', e);
       setNotifications([]);
+      setSelectedIds([]);
       setUnreadCount(0);
     }
+  };
+
+  const isAllSelected = notifications.length > 0 && selectedIds.length === notifications.length;
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(notifications.map((n) => n.id));
+    }
+  };
+
+  const handleToggleSelectOne = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
   };
 
   return (
@@ -184,7 +250,7 @@ export const AlertsPage = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchAlerts}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
@@ -201,11 +267,21 @@ export const AlertsPage = () => {
               <span>Mark All Read</span>
             </button>
           )}
+          {selectedIds.length > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-md transition-all active:scale-95 animate-pulse"
+              title="Delete selected alerts"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Selected ({selectedIds.length})</span>
+            </button>
+          )}
           {notifications.length > 0 && (
             <button
               onClick={handleClearAllAlerts}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition-colors shadow-sm"
-              title="Delete all old alerts"
+              title="Delete all alerts and clear from Reports"
             >
               <Trash2 className="w-4 h-4" />
               <span>Clear All Alerts</span>
@@ -214,15 +290,27 @@ export const AlertsPage = () => {
         </div>
       </div>
 
-      {/* Filter Bar */}
+      {/* Filter Bar with Select All */}
       <div className="glass-panel p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-xs font-mono">
+        <div className="flex flex-wrap items-center gap-4 text-xs font-mono">
+          {notifications.length > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 hover:bg-slate-800 transition-colors">
+              <input
+                type="checkbox"
+                checked={isAllSelected}
+                onChange={handleToggleSelectAll}
+                className="w-4 h-4 rounded bg-slate-950 border-slate-600 text-rose-600 focus:ring-0 cursor-pointer"
+              />
+              <span>{isAllSelected ? 'Deselect All' : 'Select All'}</span>
+            </label>
+          )}
+
           <label className="flex items-center gap-2 cursor-pointer text-slate-300">
             <input
               type="checkbox"
               checked={filterUnreadOnly}
               onChange={(e) => setFilterUnreadOnly(e.target.checked)}
-              className="rounded bg-slate-950 border-slate-700 text-rose-600 focus:ring-0"
+              className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-rose-600 focus:ring-0 cursor-pointer"
             />
             <span>Unread Only ({unreadCount})</span>
           </label>
@@ -239,9 +327,14 @@ export const AlertsPage = () => {
           </select>
         </div>
 
-        <span className="text-xs font-mono text-slate-400">
-          Showing {notifications.length} alerts
-        </span>
+        <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+          {selectedIds.length > 0 && (
+            <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+              {selectedIds.length} Selected
+            </span>
+          )}
+          <span>Showing {notifications.length} alerts</span>
+        </div>
       </div>
 
       {/* Alerts Feed */}
@@ -284,11 +377,15 @@ export const AlertsPage = () => {
             const displayTitle = n.title || '';
             const displayPhoto = photo;
 
+            const isSelected = selectedIds.includes(n.id);
+
             return (
               <div
                 key={n.id}
                 className={`glass-panel p-4 sm:p-5 rounded-2xl border transition-all flex flex-col gap-3 ${
-                  n.is_read
+                  isSelected
+                    ? 'border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/25 shadow-xl shadow-rose-950/40'
+                    : n.is_read
                     ? 'border-slate-800/60 opacity-75 bg-slate-900/30'
                     : n.severity === 'critical'
                     ? 'border-rose-500/50 bg-rose-500/5 shadow-lg shadow-rose-950/30'
@@ -299,6 +396,17 @@ export const AlertsPage = () => {
               >
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
+                    {/* Multi-Select Item Checkbox */}
+                    <div className="pt-2 shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleToggleSelectOne(n.id)}
+                        className="w-4 h-4 rounded bg-slate-950 border-slate-600 text-rose-600 focus:ring-0 cursor-pointer"
+                        title="Select alert for bulk action"
+                      />
+                    </div>
+
                     <div
                       className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
                         n.severity === 'critical'
@@ -342,12 +450,13 @@ export const AlertsPage = () => {
 
                   {/* Top Action Buttons */}
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                    {(n.incident_id || matchedInc?.id) && (
+                    {lat != null && lng != null && (
                       <Link
-                        to={`/incidents/${n.incident_id || matchedInc?.id}`}
+                        to={`/map?focusLat=${lat}&focusLng=${lng}&route=true`}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors font-mono"
+                        title="View Incident and Road Route on Live Map"
                       >
-                        <span>Dossier</span>
+                        <span>Map Route</span>
                         <ExternalLink className="w-3 h-3" />
                       </Link>
                     )}
@@ -363,9 +472,9 @@ export const AlertsPage = () => {
                     )}
 
                     <button
-                      onClick={() => handleDeleteAlert(n.id)}
+                      onClick={() => handleDeleteAlert(n)}
                       className="p-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 border border-slate-700 transition-colors"
-                      title="Delete this alert"
+                      title="Delete this alert and clear from Reports"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

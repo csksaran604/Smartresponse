@@ -386,23 +386,79 @@ export const LiveMapPage = () => {
     }
   }, [userLocation, mapCenter]);
 
-  // Handle URL Query Params for auto-focusing on incoming alerts
+  const focusLatParam = searchParams.get('focusLat');
+  const focusLngParam = searchParams.get('focusLng');
+  const routeParam = searchParams.get('route');
+
+  // Determine ONLY the current active accident (priority: URL params > active localStorage SOS > latest incident)
+  const currentAccident = React.useMemo(() => {
+    if (focusLatParam && focusLngParam) {
+      const fLat = parseFloat(focusLatParam);
+      const fLng = parseFloat(focusLngParam);
+      const found = incidents.find(
+        (i) => Math.abs(i.latitude - fLat) < 0.005 && Math.abs(i.longitude - fLng) < 0.005
+      );
+      if (found) return found;
+      return {
+        id: 'active-sos-target',
+        incident_id: 'SOS-LIVE-ALERT',
+        latitude: fLat,
+        longitude: fLng,
+        address: 'Citizen Emergency SOS Location',
+        severity: 'Critical',
+        response_status: 'Active',
+        date_time: new Date().toISOString(),
+      };
+    }
+
+    try {
+      const saved = localStorage.getItem('ser_active_sos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.latitude && parsed?.longitude) {
+          const fLat = parseFloat(parsed.latitude);
+          const fLng = parseFloat(parsed.longitude);
+          const found = incidents.find(
+            (i) => Math.abs(i.latitude - fLat) < 0.005 && Math.abs(i.longitude - fLng) < 0.005
+          );
+          if (found) return found;
+          return {
+            id: parsed.id || 'ser-live-sos',
+            incident_id: parsed.id || 'CITIZEN-SOS',
+            latitude: fLat,
+            longitude: fLng,
+            address: parsed.address || 'Citizen Distress Location',
+            severity: parsed.severity || 'Critical',
+            type: parsed.type || parsed.emergencyType || 'Medical',
+            phone: parsed.reporter_phone || parsed.phone,
+            photo: parsed.photo,
+            response_status: 'Active',
+            date_time: parsed.timestamp || new Date().toISOString(),
+          };
+        }
+      }
+    } catch {}
+
+    if (incidents.length > 0) {
+      return incidents[0];
+    }
+    return null;
+  }, [focusLatParam, focusLngParam, incidents]);
+
+  // Handle URL Query Params and Auto-route to current accident
   useEffect(() => {
-    const focusLat = searchParams.get('focusLat');
-    const focusLng = searchParams.get('focusLng');
-    const route = searchParams.get('route');
-
-    if (focusLat && focusLng) {
-      const lat = parseFloat(focusLat);
-      const lng = parseFloat(focusLng);
-      setMapCenter([lat, lng]);
-      setMapZoom(16);
-
-      if (route === 'true') {
-        calculateRouteTo(lat, lng, 'Emergency SOS Incident');
+    if (currentAccident?.latitude && currentAccident?.longitude) {
+      const lat = Number(currentAccident.latitude);
+      const lng = Number(currentAccident.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        calculateRouteTo(lat, lng, currentAccident.incident_id || 'Active Emergency Scene');
+        if (focusLatParam) {
+          setMapCenter([lat, lng]);
+          setMapZoom(16);
+        }
       }
     }
-  }, [searchParams, calculateRouteTo]);
+  }, [currentAccident, calculateRouteTo, focusLatParam]);
 
   // Spawn Demo Units Near User's Real Coordinates
   const spawnDemoUnitsNearMe = async () => {
@@ -590,15 +646,6 @@ export const LiveMapPage = () => {
             <span>Alerts</span>
           </Link>
 
-          <Link
-            to="/incidents"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-amber-300 border border-slate-700 transition-all font-mono"
-            title="Go to Incidents List"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            <span>Incidents</span>
-          </Link>
-
           <button
             onClick={() => {
               setSosSuccess(null);
@@ -769,7 +816,7 @@ export const LiveMapPage = () => {
         </div>
       ) : (
         /* Interactive Google Maps Layer with Live Pins, Real-time GPS, & Dispatch Units */
-        <div className="glass-panel p-2 rounded-2xl border border-slate-800 h-[620px] overflow-hidden shadow-2xl relative">
+        <div className="glass-panel p-2 rounded-2xl border border-slate-800 h-[620px] overflow-hidden shadow-2xl relative" style={{ isolation: 'isolate' }}>
           {/* Active Navigation Route HUD */}
           {activeRoute && (
             <div className="absolute top-4 left-4 z-[500] max-w-sm rounded-2xl bg-slate-900/95 border-2 border-sky-500 shadow-2xl p-3 text-white font-sans backdrop-blur-md animate-fadeIn">
@@ -957,34 +1004,36 @@ export const LiveMapPage = () => {
               </>
             )}
 
-            {/* Incident Markers */}
-            {filteredIncidents.map((inc) => {
-              const color = SEVERITY_PIN_COLORS[inc.severity] || '#ea4335';
-              const icon = getCachedIcon(color, inc.severity[0], false);
+            {/* Current Active Accident Marker ONLY */}
+            {currentAccident && currentAccident.latitude && currentAccident.longitude && (() => {
+              const color = SEVERITY_PIN_COLORS[currentAccident.severity] || '#ea4335';
+              const icon = getCachedIcon(color, '!', false);
               const distFromUser = userLocation
-                ? calculateDistance(userLocation.lat, userLocation.lng, inc.latitude, inc.longitude)
+                ? calculateDistance(userLocation.lat, userLocation.lng, currentAccident.latitude, currentAccident.longitude)
                 : null;
-              const gmapsDirections = `https://www.google.com/maps/dir/?api=1&destination=${inc.latitude},${inc.longitude}`;
+              const gmapsDirections = `https://www.google.com/maps/dir/?api=1&destination=${currentAccident.latitude},${currentAccident.longitude}`;
 
               return (
                 <Marker
-                  key={`inc-${inc.id}`}
-                  position={[inc.latitude, inc.longitude]}
+                  key={`current-accident-${currentAccident.id || 'live-pin'}`}
+                  position={[Number(currentAccident.latitude), Number(currentAccident.longitude)]}
                   icon={icon}
                 >
                   <Popup>
-                    <div className="space-y-2 font-sans p-1 text-xs">
+                    <div className="space-y-2 font-sans p-1 text-xs min-w-[210px]">
                       <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-                        <span className="font-mono font-bold text-rose-400">{inc.incident_id}</span>
-                        <SeverityBadge severity={inc.severity} />
+                        <span className="font-mono font-bold text-rose-400">
+                          {currentAccident.incident_id || 'Active Accident Scene'}
+                        </span>
+                        <SeverityBadge severity={currentAccident.severity || 'Critical'} />
                       </div>
 
-                      <p className="text-slate-200 font-medium">{inc.address}</p>
+                      <p className="text-slate-200 font-medium">{currentAccident.address}</p>
 
-                      {inc.photo && (
+                      {currentAccident.photo && (
                         <div className="rounded-lg overflow-hidden border border-emerald-500/50 my-1.5 max-h-32 bg-black">
                           <img
-                            src={inc.photo}
+                            src={currentAccident.photo}
                             alt="Accident scene photo"
                             className="w-full h-32 object-cover"
                           />
@@ -995,17 +1044,19 @@ export const LiveMapPage = () => {
                         {distFromUser && (
                           <p className="text-amber-300 font-semibold">Distance from you: {distFromUser} km</p>
                         )}
-                        <p>Time: {formatDateTime(inc.date_time)}</p>
-                        <p>Status: {inc.response_status}</p>
-                        <p>Reporter: {inc.reporter}</p>
+                        <p>Time: {formatDateTime(currentAccident.date_time || currentAccident.created_at)}</p>
+                        {currentAccident.phone && (
+                          <p className="text-emerald-400 font-bold">Contact: {currentAccident.phone}</p>
+                        )}
+                        <p>Status: {currentAccident.response_status || 'Dispatched'}</p>
                       </div>
 
                       <button
-                        onClick={() => calculateRouteTo(inc.latitude, inc.longitude, inc.incident_id)}
+                        onClick={() => calculateRouteTo(currentAccident.latitude, currentAccident.longitude, currentAccident.incident_id)}
                         className="w-full py-1.5 px-2.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-[11px] font-bold font-mono flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Navigation className="w-3 h-3 text-sky-400" />
-                        <span>Draw Road Route from You</span>
+                        <span>Recalculate Road Route</span>
                       </button>
 
                       <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
@@ -1020,77 +1071,17 @@ export const LiveMapPage = () => {
                         </a>
 
                         <Link
-                          to={`/incidents/${inc.id}`}
+                          to="/alerts"
                           className="text-[11px] font-bold text-rose-400 hover:text-rose-300 font-mono"
                         >
-                          Incident Details &rarr;
+                          View in Alerts &rarr;
                         </Link>
                       </div>
                     </div>
                   </Popup>
                 </Marker>
               );
-            })}
-
-            {/* Emergency Unit Markers */}
-            {filteredUnits.map((u) => {
-              const color = UNIT_PIN_COLORS[u.type] || '#1a73e8';
-              const icon = getCachedIcon(color, u.unit_id.split('-')[0], true);
-              const distFromUser = userLocation
-                ? calculateDistance(userLocation.lat, userLocation.lng, u.latitude, u.longitude)
-                : null;
-              const gmapsUnitLocation = `https://www.google.com/maps/search/?api=1&query=${u.latitude},${u.longitude}`;
-
-              return (
-                <Marker
-                  key={`unit-${u.id}`}
-                  position={[u.latitude, u.longitude]}
-                  icon={icon}
-                >
-                  <Popup>
-                    <div className="space-y-1.5 font-sans p-1 text-xs">
-                      <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-                        <span className="font-mono font-bold text-sky-400">{u.unit_id}</span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                          {u.type}
-                        </span>
-                      </div>
-
-                      <p className="text-slate-300">
-                        Officer: <strong className="text-white">{u.driver_name}</strong>
-                      </p>
-                      {distFromUser && (
-                        <p className="text-emerald-400 font-mono text-[11px] font-semibold">
-                          Distance from you: {distFromUser} km
-                        </p>
-                      )}
-                      <p className="text-slate-400 font-mono text-[11px]">Radio/Phone: {u.contact_number}</p>
-                      <p className="text-slate-400 font-mono text-[11px]">Status: {u.status}</p>
-
-                      <div className="pt-1.5 border-t border-slate-800 flex items-center justify-between gap-2">
-                        <a
-                          href={`tel:${u.contact_number}`}
-                          className="inline-flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 font-bold"
-                        >
-                          <PhoneCall className="w-3 h-3" />
-                          <span>Direct Call</span>
-                        </a>
-
-                        <a
-                          href={gmapsUnitLocation}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-slate-300 hover:text-white font-mono"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>Google Map</span>
-                        </a>
-                      </div>
-                    </div>
-                  </Popup>
-                </Marker>
-              );
-            })}
+            })()}
           </MapContainer>
         </div>
       )}

@@ -100,26 +100,13 @@ export const ReportsPage = () => {
       setResponseTimeData(respRes.data);
 
       // Resolve daily breakdown (accidents per day)
-      let daily = dailyRes.data?.daily || accData?.daily_breakdown || [];
-      if (!daily || daily.length === 0) {
+      let daily = [];
+      if (records && records.length > 0) {
         const dailyMap = {};
         records.forEach((r) => {
-          const d = r.date_time ? r.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
+          const d = r.date_time ? r.date_time.split('T')[0] : (r.created_at ? r.created_at.split('T')[0] : new Date().toISOString().split('T')[0]);
           dailyMap[d] = (dailyMap[d] || 0) + 1;
         });
-        daily = Object.entries(dailyMap).map(([date, count]) => ({ date, count }));
-      }
-
-      // Ensure multi-day trend coverage if records only span 1 or 2 days
-      if (daily.length < 3) {
-        const dailyMap = {};
-        daily.forEach(item => { dailyMap[item.date] = item.count; });
-        for (let i = 4; i >= 0; i--) {
-          const dStr = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-          if (!dailyMap[dStr]) {
-            dailyMap[dStr] = i === 0 ? Math.max(1, records.length) : [2, 3, 1, 4][i % 4];
-          }
-        }
         daily = Object.entries(dailyMap)
           .map(([date, count]) => ({ date, count }))
           .sort((a, b) => a.date.localeCompare(b.date));
@@ -546,11 +533,12 @@ export const ReportsPage = () => {
                       </td>
                       <td className="py-2.5 px-3 text-right whitespace-nowrap">
                         <Link
-                          to={`/incidents/${inc.id}`}
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors inline-flex items-center gap-1 font-mono"
+                          to={`/map?focusLat=${inc.latitude}&focusLng=${inc.longitude}&route=true`}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-sky-300 border border-slate-700 transition-colors inline-flex items-center gap-1 font-mono"
+                          title="View on Live Map"
                         >
                           <Eye className="w-3 h-3" />
-                          <span>View</span>
+                          <span>Map</span>
                         </Link>
                       </td>
                     </tr>

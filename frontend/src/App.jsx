@@ -53,8 +53,8 @@ function App() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/portal" element={<CitizenPortalPage />} />
               <Route path="/detection" element={<AccidentDetectionPage />} />
-              <Route path="/incidents" element={<IncidentsPage />} />
-              <Route path="/incidents/:id" element={<IncidentDetailPage />} />
+              <Route path="/incidents" element={<Navigate to="/alerts" replace />} />
+              <Route path="/incidents/:id" element={<Navigate to="/alerts" replace />} />
               <Route path="/map" element={<LiveMapPage />} />
               <Route path="/units" element={<EmergencyUnitsPage />} />
               <Route path="/alerts" element={<AlertsPage />} />

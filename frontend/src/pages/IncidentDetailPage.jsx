@@ -120,8 +120,8 @@ export const IncidentDetailPage = () => {
       <div className="p-8 text-center glass-panel rounded-2xl border border-rose-500/30 max-w-lg mx-auto">
         <AlertTriangle className="w-8 h-8 text-rose-400 mx-auto mb-2" />
         <p className="text-sm text-white font-bold mb-4">{error || 'Incident not found'}</p>
-        <Link to="/incidents" className="px-4 py-2 rounded-lg bg-slate-800 text-xs text-white">
-          Return to Incidents List
+        <Link to="/alerts" className="px-4 py-2 rounded-lg bg-slate-800 text-xs text-white">
+          Return to Emergency Alerts
         </Link>
       </div>
     );
@@ -135,7 +135,7 @@ export const IncidentDetailPage = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate('/incidents')}
+            onClick={() => navigate('/alerts')}
             className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

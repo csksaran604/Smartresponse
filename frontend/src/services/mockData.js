@@ -538,11 +538,18 @@ export const mockDb = {
     const pending = incidents.filter(i => i.verification_status === 'Pending').length;
     const available = units.filter(u => u.status === 'Available').length;
     const highCrit = incidents.filter(i => i.severity === 'High' || i.severity === 'Critical').length;
+    
+    // Compute today's accidents and daily average
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayCount = incidents.filter(i => (i.date_time || i.created_at || '').startsWith(todayStr)).length;
+    const avgPerDay = incidents.length > 0 ? (incidents.length / Math.max(1, 7)).toFixed(1) : 0;
 
     return {
       metrics: {
         total_incidents: incidents.length,
-        today_incidents: incidents.length,
+        today_incidents: todayCount,
+        accidents_per_day: avgPerDay,
+        accidents_today: todayCount,
         active_incidents: incidents.filter(i => i.response_status !== 'Resolved').length,
         verified_incidents: verified,
         pending_verification: pending,
@@ -556,13 +563,62 @@ export const mockDb = {
   },
 
   getAnalytics() {
+    const incidents = this.getIncidents();
+    const units = this.getUnits();
+
+    // Group by day for last 7 days (Accidents per day)
+    const daysMap = {};
+    for (let d = 6; d >= 0; d--) {
+      const dateObj = new Date(Date.now() - d * 86400000);
+      const dateKey = dateObj.toISOString().split('T')[0];
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+      daysMap[dateKey] = { date: dateKey, day: dayName, incidents: 0, accidents: 0 };
+    }
+
+    incidents.forEach(inc => {
+      const dateKey = (inc.date_time || inc.created_at || '').split('T')[0];
+      if (daysMap[dateKey]) {
+        daysMap[dateKey].incidents += 1;
+        daysMap[dateKey].accidents += 1;
+      }
+    });
+
+    const byDay = Object.values(daysMap);
+    const totalWeekAccidents = byDay.reduce((acc, curr) => acc + curr.incidents, 0);
+    const avgPerDay = (totalWeekAccidents / 7).toFixed(1);
+
+    const severityCounts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    incidents.forEach(inc => {
+      const s = inc.severity || 'Medium';
+      if (severityCounts[s] !== undefined) severityCounts[s]++;
+      else severityCounts.Medium++;
+    });
+
+    const bySeverity = Object.entries(severityCounts).map(([name, count]) => ({ name, count }));
+
+    const statusCounts = {};
+    incidents.forEach(inc => {
+      const st = inc.response_status || 'Pending';
+      statusCounts[st] = (statusCounts[st] || 0) + 1;
+    });
+    const byStatus = Object.entries(statusCounts).map(([name, count]) => ({ name, count }));
+
+    const locMap = {};
+    incidents.forEach(inc => {
+      const loc = inc.address ? inc.address.split(',')[0].trim() : 'Chennai Central';
+      locMap[loc] = (locMap[loc] || 0) + 1;
+    });
+    const byLocation = Object.entries(locMap)
+      .map(([location, count]) => ({ location, count }))
+      .sort((a, b) => b.count - a.count);
+
     return {
-      accidents_by_severity: [
-        { severity: 'Critical', count: 4 },
-        { severity: 'High', count: 9 },
-        { severity: 'Medium', count: 14 },
-        { severity: 'Low', count: 7 },
-      ],
+      accidents_per_day_avg: avgPerDay,
+      by_day: byDay,
+      by_severity: bySeverity,
+      by_status: byStatus,
+      by_location: byLocation,
+      accidents_by_severity: bySeverity,
       incidents_by_hour: [
         { hour: '00:00', count: 1 },
         { hour: '04:00', count: 0 },
@@ -572,10 +628,10 @@ export const mockDb = {
         { hour: '20:00', count: 4 },
       ],
       unit_status_distribution: [
-        { status: 'Available', count: 3 },
-        { status: 'Dispatched', count: 1 },
-        { status: 'En Route', count: 1 },
-        { status: 'Busy', count: 0 },
+        { status: 'Available', count: units.filter(u => u.status === 'Available').length },
+        { status: 'Dispatched', count: units.filter(u => u.status === 'Dispatched').length },
+        { status: 'En Route', count: units.filter(u => u.status === 'En Route').length },
+        { status: 'Busy', count: units.filter(u => u.status === 'Busy').length },
       ],
     };
   }
@@ -726,6 +782,11 @@ export async function handleMockRequest(config) {
       page: 1,
       per_page: 50,
     });
+  }
+
+  if (url === '/accidents' && method === 'delete') {
+    mockDb.saveIncidents([]);
+    return mockResponse({ message: 'All accidents cleared successfully' });
   }
 
   const accidentMatch = url.match(/^\/accidents\/([^/]+)$/);
@@ -1069,21 +1130,17 @@ export async function handleMockRequest(config) {
     const pending = list.filter(i => i.verification_status === 'Pending').length;
 
     // Daily breakdown: count incidents per day
-    const dailyMap = {};
-    list.forEach(inc => {
-      const d = inc.date_time ? inc.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
-      dailyMap[d] = (dailyMap[d] || 0) + 1;
-    });
-    // Ensure rolling 5-day trend coverage
-    for (let i = 4; i >= 0; i--) {
-      const dayStr = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-      if (!dailyMap[dayStr]) {
-        dailyMap[dayStr] = i === 0 ? Math.max(1, list.length) : [2, 4, 1, 3][i % 4];
-      }
+    let dailyBreakdown = [];
+    if (list.length > 0) {
+      const dailyMap = {};
+      list.forEach(inc => {
+        const d = inc.date_time ? inc.date_time.split('T')[0] : (inc.created_at ? inc.created_at.split('T')[0] : new Date().toISOString().split('T')[0]);
+        dailyMap[d] = (dailyMap[d] || 0) + 1;
+      });
+      dailyBreakdown = Object.entries(dailyMap)
+        .map(([date, count]) => ({ date, count }))
+        .sort((a, b) => a.date.localeCompare(b.date));
     }
-    const dailyBreakdown = Object.entries(dailyMap)
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
 
     return mockResponse({
       total: list.length,

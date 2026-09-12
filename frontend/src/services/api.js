@@ -112,6 +112,7 @@ export const accidentsApi = {
   createAccident: (data) => api.post('/api/accidents', data),
   updateAccident: (id, data) => api.put(`/api/accidents/${id}`, data),
   deleteAccident: (id) => api.delete(`/api/accidents/${id}`),
+  clearAllAccidents: () => api.delete('/api/accidents'),
   verifyAccident: (id, data) => api.put(`/api/accidents/${id}/verify`, data),
   updateStatus: (id, data) => api.put(`/api/accidents/${id}/status`, data),
 };

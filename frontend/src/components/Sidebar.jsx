@@ -21,7 +21,6 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
     { to: '/', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/map', label: 'Live GPS Map', icon: MapPin },
     { to: '/detection', label: 'AI Detection', icon: ScanEye, badge: 'AI' },
-    { to: '/incidents', label: 'Incidents', icon: AlertOctagon },
     { to: '/units', label: 'Emergency Units', icon: Ambulance },
     { to: '/alerts', label: 'Alerts', icon: Bell },
     { to: '/reports', label: 'Reports', icon: BarChart3 },
