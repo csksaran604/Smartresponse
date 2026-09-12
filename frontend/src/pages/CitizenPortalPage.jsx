@@ -54,6 +54,7 @@ export const CitizenPortalPage = () => {
   const [emergencyType, setEmergencyType] = useState('Medical');
   const [urgency, setUrgency] = useState('Critical');
   const [notes, setNotes] = useState('');
+  const [phone, setPhone] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : ''));
   const [submitting, setSubmitting] = useState(false);
 
   // Photo upload & AI detection
@@ -143,7 +144,14 @@ export const CitizenPortalPage = () => {
 
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setBase64Photo(ev.target.result);
+      const dataUrl = ev.target.result;
+      setBase64Photo(dataUrl);
+      try {
+        localStorage.setItem('ser_user_uploaded_photo', dataUrl);
+        localStorage.setItem('ser_latest_sos_photo', dataUrl);
+      } catch (err) {
+        console.warn('Local photo cache warning:', err);
+      }
     };
     reader.readAsDataURL(file);
 
@@ -203,32 +211,55 @@ export const CitizenPortalPage = () => {
         Police: '👮 POLICE / CRIME RESPONSE',
       };
 
+      const userTypedPhone = (phone && phone.trim()) || user?.phone || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '');
+      if (userTypedPhone && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('ser_user_phone', userTypedPhone);
+        } catch {}
+      }
+
+      const alertId = `SOS-${Date.now().toString().slice(-6)}`;
+      const photoToUse = base64Photo || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null);
+
+      if (photoToUse && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(`ser_sos_photo_${alertId}`, photoToUse);
+          localStorage.setItem('ser_latest_sos_photo', photoToUse);
+        } catch {}
+      }
+
       const payload = {
+        id: alertId,
         latitude: userLocation.lat,
         longitude: userLocation.lng,
-        address: userLocation.address || `${userLocation.lat}, ${userLocation.lng}`,
+        address: userLocation.address || `${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`,
         description: notes
           ? `${typeLabels[emergencyType]}: ${notes}`
           : `${typeLabels[emergencyType]} requested at live citizen location.`,
         severity: urgency,
         emergency_type: emergencyType,
         type: emergencyType,
-        reporter: user?.full_name || 'Citizen (SOS App)',
-        phone: user?.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '',
+        reporter: user?.full_name || (userTypedPhone ? `Citizen (${userTypedPhone})` : 'Citizen (SOS App)'),
+        phone: userTypedPhone,
+        reporter_phone: userTypedPhone,
         ai_confidence: aiResult ? aiResult.confidence_score : 98.0,
         detection_id: aiResult ? aiResult.id : null,
-        photo: base64Photo || null,
+        photo: photoToUse,
       };
 
       // Broadcast to real-time emergency operator terminal
       await broadcastEmergencySos({
+        id: alertId,
         type: emergencyType,
+        emergencyType,
         latitude: userLocation.lat,
         longitude: userLocation.lng,
         address: payload.address,
-        notes: payload.description,
-        phone: user?.phone || user?.full_name || 'Citizen Portal User',
-        photo: base64Photo || null,
+        notes: notes ? notes : payload.description,
+        reporter: payload.reporter,
+        phone: userTypedPhone,
+        reporter_phone: userTypedPhone,
+        photo: photoToUse,
         urgency,
       }).catch(() => {});
 
@@ -415,10 +446,34 @@ export const CitizenPortalPage = () => {
             </div>
           </div>
 
+          {/* Contact Phone Number */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-800">
+            <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <PhoneCall className="w-3.5 h-3.5 text-rose-400" />
+                2. Your Contact Phone Number (தொடர்பு எண்)
+              </span>
+              {phone && <span className="text-[10px] text-emerald-400 font-mono font-bold">SAVED ✓</span>}
+            </label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPhone(val);
+                if (val && typeof window !== 'undefined') {
+                  try { localStorage.setItem('ser_user_phone', val); } catch {}
+                }
+              }}
+              placeholder="e.g. +91 98765 43210 (For Emergency Responders to call you back)"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-rose-500"
+            />
+          </div>
+
           {/* Additional details & Camera photo upload */}
           <div className="space-y-3 pt-2 border-t border-slate-800">
             <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">
-              2. Situation Details & Camera Upload (Optional)
+              3. Situation Details & Camera Upload (Optional)
             </label>
             <textarea
               rows={2}

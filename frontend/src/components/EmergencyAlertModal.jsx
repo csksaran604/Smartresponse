@@ -183,7 +183,7 @@ export const EmergencyAlertModal = () => {
       if (saved) {
         const parsed = JSON.parse(saved);
         const age = parsed?.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : Infinity;
-        if (age > 3 * 60 * 1000 || isAlertDismissed(parsed?.id)) {
+        if (age > 15 * 60 * 1000 || isAlertDismissed(parsed?.id)) {
           localStorage.removeItem('ser_active_sos');
         }
       }
@@ -196,14 +196,14 @@ export const EmergencyAlertModal = () => {
     if (!isOwner) return;
 
     const checkForPendingAlerts = async () => {
-      // 1. Check local storage for recent undismissed emergency alert (strictly within last 3 minutes)
+      // 1. Check local storage for recent undismissed emergency alert (strictly within last 15 minutes)
       try {
         const saved = localStorage.getItem('ser_active_sos');
         if (saved) {
           const parsed = JSON.parse(saved);
           if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
             const age = parsed.timestamp ? Date.now() - new Date(parsed.timestamp).getTime() : Infinity;
-            if (age < 3 * 60 * 1000) {
+            if (age < 15 * 60 * 1000) {
               triggerEmergencyAlert(parsed);
               return;
             } else {
@@ -214,7 +214,7 @@ export const EmergencyAlertModal = () => {
         }
       } catch {}
 
-      // 2. Check cloud ntfy relays for any citizen report sent right before admin login (strictly within last 3 minutes)
+      // 2. Check cloud ntfy relays for any citizen report sent right before admin login (strictly within last 15 minutes)
       try {
         const cloudAlert = await checkPendingCloudAlert();
         if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id)) {
@@ -292,9 +292,24 @@ export const EmergencyAlertModal = () => {
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
 
+    // Also listen for cross-tab storage changes (e.g. user reports in another browser tab)
+    const handleStorageChange = (e) => {
+      if (e.key === 'ser_active_sos' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+          if (isOwnerAdmin && parsed && parsed.id && !isAlertDismissed(parsed.id)) {
+            triggerEmergencyAlert(parsed);
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
     return () => {
       unsubscribe();
       window.removeEventListener('ser_emergency_sos', handleDirectSos);
+      window.removeEventListener('storage', handleStorageChange);
       stopEmergencySiren();
     };
   }, [getResponderLocation, triggerEmergencyAlert]);
@@ -381,8 +396,8 @@ export const EmergencyAlertModal = () => {
 
   const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
 
-  // Never render on citizen SOS page, or on live map page, or for non-admin viewers
-  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen' || location.pathname === '/map') {
+  // Never render on citizen SOS page or for non-admin viewers (ALLOWED on /map so alerts appear on live map!)
+  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
     return null;
   }
 
@@ -403,12 +418,20 @@ export const EmergencyAlertModal = () => {
 
   // Remote Citizen phone takes first priority:
   const remotePhone = (!isDummyPhoneNumber(activeAlert.reporter_phone) ? activeAlert.reporter_phone : '') ||
-                      (!isDummyPhoneNumber(activeAlert.phone) ? activeAlert.phone : '');
+                      (!isDummyPhoneNumber(activeAlert.phone) ? activeAlert.phone : '') ||
+                      (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '');
   const callerPhone = remotePhone || cleanPhoneNumber('', activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
 
-  // Remote Citizen photo takes first priority:
-  const displayPhoto = activeAlert.photo || activeAlert.photo_url || null;
+  // Remote Citizen photo takes first priority with fallback to local cache
+  const displayPhoto = activeAlert.photo ||
+    activeAlert.photo_url ||
+    (typeof window !== 'undefined' ? (
+      localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) ||
+      localStorage.getItem('ser_user_uploaded_photo') ||
+      localStorage.getItem('ser_latest_sos_photo') ||
+      null
+    ) : null);
 
   const cleanDisplayAddress = cleanLocation(activeAlert.address);
 
@@ -659,14 +682,24 @@ export const EmergencyAlertModal = () => {
                   <p className="text-xs font-semibold text-slate-200 mt-0.5 leading-snug">
                     {cleanDisplayAddress}
                   </p>
-                  {activeAlert.notes && activeAlert.notes !== activeAlert.address && (
-                    <p className="text-[11px] text-amber-300/90 mt-1 font-mono italic">
-                      Note: "{activeAlert.notes}"
-                    </p>
-                  )}
                 </div>
               </div>
             </div>
+
+            {/* 5. CITIZEN SITUATION NOTES (குறிப்புகள்) */}
+            {activeAlert.notes && activeAlert.notes !== activeAlert.address && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  <span className="text-[10px] font-mono text-amber-400 uppercase tracking-wider font-bold">
+                    விபத்து விவரம் / CITIZEN REPORT NOTES
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-slate-100 leading-relaxed pl-1 whitespace-pre-wrap">
+                  "{activeAlert.notes}"
+                </p>
+              </div>
+            )}
 
             {/* 5. CITIZEN PHONE NUMBER */}
             <div className="p-3.5 rounded-2xl bg-slate-800/90 border border-slate-700/80 flex items-center justify-between">

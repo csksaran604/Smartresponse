@@ -11,6 +11,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { accidentsApi } from '../services/api';
+import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
@@ -78,7 +79,20 @@ export const IncidentsPage = () => {
     e.preventDefault();
     setCreateLoading(true);
     try {
-      await accidentsApi.createAccident(createForm);
+      const res = await accidentsApi.createAccident(createForm);
+      const created = res.data?.accident || createForm;
+      await broadcastEmergencySos({
+        id: created.id ? `SOS-${created.id}` : `SOS-${Date.now().toString().slice(-6)}`,
+        type: 'Traffic',
+        emergencyType: 'Traffic',
+        latitude: createForm.latitude,
+        longitude: createForm.longitude,
+        address: createForm.address,
+        notes: createForm.description || 'Manual incident report created',
+        urgency: createForm.severity || 'Critical',
+        source: 'INCIDENT_REGISTRATION',
+      }).catch(() => {});
+
       setShowCreateModal(false);
       setCreateForm({
         address: '',

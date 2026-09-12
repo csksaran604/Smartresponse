@@ -367,7 +367,11 @@ export const PublicSosPage = () => {
       localStorage.setItem('ser_active_sos', JSON.stringify(emergencyPayload));
       localStorage.setItem('ser_selected_distress_type', emergencyType);
       if (userTypedPhone) localStorage.setItem('ser_user_phone', userTypedPhone);
-      if (finalPhoto) localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
+      if (finalPhoto) {
+        localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
+        localStorage.setItem(`ser_sos_photo_${emergencyPayload.id}`, finalPhoto);
+        localStorage.setItem('ser_latest_sos_photo', finalPhoto);
+      }
       window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: emergencyPayload }));
     } catch {}
 

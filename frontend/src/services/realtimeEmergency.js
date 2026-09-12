@@ -12,10 +12,10 @@ export const EMERGENCY_TOPIC = 'ser_emergency_live_v5';
 const REST_CLOUD_OBJECT_ID = 'ff808181a067127101a094ee8d8d008b';
 const REST_SYNC_URL = `https://api.restful-api.dev/objects/${REST_CLOUD_OBJECT_ID}`;
 
-// Redundant pub/sub relays
+// Redundant pub/sub relays (prioritizing responsive host)
 export const RELAY_HOSTS = [
-  'https://ntfy.sh',
   'https://ntfy.envs.net',
+  'https://ntfy.sh',
 ];
 
 // Track alerts processed in current session to prevent duplicate popups
@@ -60,14 +60,14 @@ export function markAlertDismissed(id) {
 }
 
 /**
- * Checks cloud relays for the latest undismissed emergency message within last 3 minutes
+ * Checks cloud relays for the latest undismissed emergency message within last 15 minutes
  */
 export async function checkPendingCloudAlert() {
   for (const host of RELAY_HOSTS) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=3m`, {
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=15m`, {
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -82,7 +82,7 @@ export async function checkPendingCloudAlert() {
             if (alert && alert.id && !isAlertDismissed(alert.id)) {
               if (alert.timestamp) {
                 const age = Date.now() - new Date(alert.timestamp).getTime();
-                if (age < 3 * 60 * 1000) {
+                if (age < 15 * 60 * 1000) {
                   return alert;
                 }
               } else {
@@ -128,7 +128,7 @@ export async function uploadPhotoToCloud(photo) {
     for (const host of RELAY_HOSTS) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
+        const timer = setTimeout(() => controller.abort(), 3000);
 
         const res = await fetch(`${host}/${EMERGENCY_TOPIC}_uploads`, {
           method: 'PUT',
@@ -148,7 +148,7 @@ export async function uploadPhotoToCloud(photo) {
           }
         }
       } catch (e) {
-        console.warn(`Upload attempt on ${host} note:`, e);
+        // Continue to fallback
       }
     }
   } catch (err) {
@@ -195,7 +195,8 @@ export async function broadcastEmergencySos(alertData) {
   }
   const cleanPhone = rawUserPhone || cleanPhoneNumber('', alertId);
   const cleanAddr = cleanLocation(alertData.address);
-  const finalPhoto = photoUrl || (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) ? rawPhoto : null);
+  // NEVER discard user's captured photo: use uploaded URL, or keep raw base64 data!
+  const finalPhoto = photoUrl || (typeof rawPhoto === 'string' && rawPhoto.length > 0 ? rawPhoto : null);
 
   const selectedType = alertData.type || alertData.emergencyType || 'Medical';
   const payload = {
@@ -205,7 +206,7 @@ export async function broadcastEmergencySos(alertData) {
     latitude: alertData.latitude != null ? Number(alertData.latitude) : 11.3410,
     longitude: alertData.longitude != null ? Number(alertData.longitude) : 77.7172,
     address: cleanAddr,
-    notes: alertData.notes || `${selectedType} emergency assistance requested via citizen portal`,
+    notes: alertData.notes || alertData.description || `${selectedType} emergency assistance requested via citizen portal`,
     urgency: alertData.urgency || 'Critical',
     reporter_phone: cleanPhone,
     phone: cleanPhone,
@@ -216,8 +217,13 @@ export async function broadcastEmergencySos(alertData) {
 
   // 1. Persist locally on reporting device
   try {
-    localStorage.setItem('ser_active_sos', JSON.stringify({ ...payload, photo: rawPhoto || finalPhoto }));
-    window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: { ...payload, photo: rawPhoto || finalPhoto } }));
+    localStorage.setItem('ser_active_sos', JSON.stringify(payload));
+    if (finalPhoto) {
+      localStorage.setItem(`ser_sos_photo_${alertId}`, finalPhoto);
+      localStorage.setItem('ser_latest_sos_photo', finalPhoto);
+      localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
+    }
+    window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
   } catch (err) {
     console.warn('Local storage cache note:', err);
   }
@@ -229,8 +235,9 @@ export async function broadcastEmergencySos(alertData) {
     'Tags': `rotating_light,${payload.type ? payload.type.toLowerCase() : 'ambulance'}`,
   };
 
-  if (finalPhoto) {
-    broadcastHeaders['Attach'] = finalPhoto;
+  // If photo is a hosted URL, attach header
+  if (photoUrl) {
+    broadcastHeaders['Attach'] = photoUrl;
   }
 
   await Promise.allSettled(
@@ -329,10 +336,10 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     if (isAlertDismissed(alert.id)) return;
     if (processedAlertIds.has(alert.id)) return;
 
-    // Check alert age: support up to 3 minutes so only freshly reported emergencies show
+    // Check alert age: support up to 15 minutes so freshly reported emergencies show reliably
     if (alert.timestamp) {
       const alertTime = new Date(alert.timestamp).getTime();
-      if (Date.now() - alertTime > 3 * 60 * 1000) {
+      if (Date.now() - alertTime > 15 * 60 * 1000) {
         processedAlertIds.add(alert.id);
         return;
       }
@@ -357,8 +364,8 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
       if (isClosed) break;
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=3m`, {
+        const timer = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=15m`, {
           signal: controller.signal,
         });
         clearTimeout(timer);
@@ -386,13 +393,13 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     }
   };
 
-  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts with since=3m replay
+  // 2. Secondary: Server-Sent Events (SSE) stream on redundant hosts with since=15m replay
   const connectSse = () => {
     if (isClosed || typeof EventSource === 'undefined') return;
 
     RELAY_HOSTS.forEach((host) => {
       try {
-        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=3m`);
+        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=15m`);
         es.onopen = () => {
           console.log(`[SER Relay] SSE stream open on ${host}`);
         };
