@@ -128,7 +128,7 @@ export async function uploadPhotoToCloud(photo) {
     for (const host of RELAY_HOSTS) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 3000);
+        const timer = setTimeout(() => controller.abort(), 1500);
 
         const res = await fetch(`${host}/${EMERGENCY_TOPIC}_uploads`, {
           method: 'PUT',
@@ -240,14 +240,29 @@ export async function broadcastEmergencySos(alertData) {
     broadcastHeaders['Attach'] = photoUrl;
   }
 
+  // Ntfy has a strict ~4KB limit on HTTP POST message body!
+  // Send clean, lightweight metadata in cloud message (photo is included if it's a URL or small)
+  const cloudPayload = {
+    ...payload,
+    photo: photoUrl || (typeof finalPhoto === 'string' && finalPhoto.startsWith('http') ? finalPhoto : null),
+  };
+
   await Promise.allSettled(
-    RELAY_HOSTS.map((host) =>
-      fetch(`${host}/${EMERGENCY_TOPIC}`, {
-        method: 'POST',
-        headers: broadcastHeaders,
-        body: JSON.stringify(payload),
-      }).catch((e) => console.warn(`Relay ${host} broadcast warning:`, e))
-    )
+    RELAY_HOSTS.map(async (host) => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        await fetch(`${host}/${EMERGENCY_TOPIC}`, {
+          method: 'POST',
+          headers: broadcastHeaders,
+          body: JSON.stringify(cloudPayload),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+      } catch (e) {
+        console.warn(`Relay ${host} broadcast warning:`, e);
+      }
+    })
   );
 
   return { success: true, payload };

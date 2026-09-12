@@ -60,11 +60,16 @@ function RouteBoundsFitter({ bounds }) {
 
   useEffect(() => {
     if (bounds && bounds.length === 2 && bounds[0] && bounds[1]) {
-      const key = `${Number(bounds[0][0]).toFixed(4)}_${Number(bounds[0][1]).toFixed(4)}_${Number(bounds[1][0]).toFixed(4)}_${Number(bounds[1][1]).toFixed(4)}`;
+      const b00 = Number(bounds[0][0]);
+      const b01 = Number(bounds[0][1]);
+      const b10 = Number(bounds[1][0]);
+      const b11 = Number(bounds[1][1]);
+      if (!Number.isFinite(b00) || !Number.isFinite(b01) || !Number.isFinite(b10) || !Number.isFinite(b11)) return;
+      const key = `${b00.toFixed(4)}_${b01.toFixed(4)}_${b10.toFixed(4)}_${b11.toFixed(4)}`;
       if (lastBoundsKeyRef.current !== key) {
         lastBoundsKeyRef.current = key;
         try {
-          map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16, animate: false });
+          map.fitBounds([[b00, b01], [b10, b11]], { padding: [30, 30], maxZoom: 16, animate: false });
         } catch {}
       }
     }
@@ -94,6 +99,11 @@ export const EmergencyAlertModal = () => {
   const { isAdmin } = useAuth();
   const [activeAlert, setActiveAlert] = useState(null);
   const [isMuted, setIsMuted] = useState(true);
+  const activeAlertRef = useRef(null);
+
+  useEffect(() => {
+    activeAlertRef.current = activeAlert;
+  }, [activeAlert]);
 
   // Keep ref updated to current role without closure race conditions
   const isAdminRef = useRef(isAdmin);
@@ -138,6 +148,14 @@ export const EmergencyAlertModal = () => {
   const triggerEmergencyAlert = useCallback((incomingAlert) => {
     if (!incomingAlert || !incomingAlert.id) return;
     if (isAlertDismissed(incomingAlert.id)) return;
+
+    // If currently displaying this alert, NEVER disrupt, restart siren, or replace state
+    if (activeAlertRef.current && (
+      String(activeAlertRef.current.id) === String(incomingAlert.id) ||
+      (incomingAlert.id && String(activeAlertRef.current.id).includes(String(incomingAlert.id)))
+    )) {
+      return;
+    }
 
     // The incoming remote mobile citizen's data takes absolute precedence:
     const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
@@ -196,6 +214,9 @@ export const EmergencyAlertModal = () => {
     if (!isOwner) return;
 
     const checkForPendingAlerts = async () => {
+      // If an alert is already active on admin screen, NEVER clear or interrupt it!
+      if (activeAlertRef.current) return;
+
       // 1. Check local storage for recent undismissed emergency alert (strictly within last 15 minutes)
       try {
         const saved = localStorage.getItem('ser_active_sos');
@@ -253,7 +274,8 @@ export const EmergencyAlertModal = () => {
 
       // Automatically register into backend/mock DB so it appears on the Live Map
       try {
-        if (incomingAlert.latitude && incomingAlert.longitude) {
+        if (incomingAlert.latitude && incomingAlert.longitude && incomingAlert.source === 'PUBLIC_MOBILE_SOS' && !incomingAlert._registered) {
+          incomingAlert._registered = true;
           const cleanAddr = cleanLocation(incomingAlert.address);
           const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
           const userPhone = incomingAlert.phone || cleanPhoneNumber('', incomingAlert.id);
@@ -394,7 +416,12 @@ export const EmergencyAlertModal = () => {
     }
   };
 
-  const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+  const isOwnerAdmin = (typeof window !== 'undefined' && (
+    localStorage.getItem('ser_owner_device') === 'true' ||
+    localStorage.getItem('ser_user')?.includes('ADMIN') ||
+    isAdminRef.current ||
+    isAdmin
+  ));
 
   // Never render on citizen SOS page or for non-admin viewers (ALLOWED on /map so alerts appear on live map!)
   if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
@@ -438,18 +465,23 @@ export const EmergencyAlertModal = () => {
   const exactLat = activeAlert.latitude != null ? Number(activeAlert.latitude).toFixed(5) : null;
   const exactLng = activeAlert.longitude != null ? Number(activeAlert.longitude).toFixed(5) : null;
 
-  const opLat = responderLocation?.lat || 13.0827;
-  const opLng = responderLocation?.lng || 80.2707;
-  const userLat = Number(activeAlert.latitude || 13.0827);
-  const userLng = Number(activeAlert.longitude || 80.2707);
+  const rawOpLat = Number(responderLocation?.lat);
+  const rawOpLng = Number(responderLocation?.lng);
+  const safeOpLat = (Number.isFinite(rawOpLat) && rawOpLat !== 0) ? rawOpLat : 13.0827;
+  const safeOpLng = (Number.isFinite(rawOpLng) && rawOpLng !== 0) ? rawOpLng : 80.2707;
+
+  const rawUserLat = Number(activeAlert.latitude);
+  const rawUserLng = Number(activeAlert.longitude);
+  const safeUserLat = (Number.isFinite(rawUserLat) && rawUserLat !== 0) ? rawUserLat : 11.3410;
+  const safeUserLng = (Number.isFinite(rawUserLng) && rawUserLng !== 0) ? rawUserLng : 77.7172;
 
   const routeBounds = [
-    [opLat, opLng],
-    [userLat, userLng]
+    [safeOpLat, safeOpLng],
+    [safeUserLat, safeUserLng]
   ];
 
   // Google Maps Turn-by-Turn Navigation URL
-  const googleMapsDirectionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${opLat},${opLng}&destination=${userLat},${userLng}&travelmode=driving`;
+  const googleMapsDirectionsUrl = `https://www.google.com/maps/dir/?api=1&origin=${safeOpLat},${safeOpLng}&destination=${safeUserLat},${safeUserLng}&travelmode=driving`;
 
   return (
     <>
@@ -593,7 +625,8 @@ export const EmergencyAlertModal = () => {
               {/* Embedded Leaflet Route Map */}
               <div className="h-44 w-full relative z-0">
                 <MapContainer
-                  center={[(opLat + userLat) / 2, (opLng + userLng) / 2]}
+                  key={`alert-map-${activeAlert.id || 'current'}`}
+                  center={[(safeOpLat + safeUserLat) / 2, (safeOpLng + safeUserLng) / 2]}
                   zoom={14}
                   scrollWheelZoom={false}
                   zoomControl={false}
@@ -621,7 +654,7 @@ export const EmergencyAlertModal = () => {
                   )}
 
                   {/* Responder Location Marker */}
-                  <Marker position={[opLat, opLng]} icon={responderMarkerIcon}>
+                  <Marker position={[safeOpLat, safeOpLng]} icon={responderMarkerIcon}>
                     <Popup>
                       <div className="text-xs font-mono font-bold text-blue-600 p-1">
                         📍 YOUR LOCATION (RESPONDER)
@@ -630,7 +663,7 @@ export const EmergencyAlertModal = () => {
                   </Marker>
 
                   {/* Citizen Accident Location Marker */}
-                  <Marker position={[userLat, userLng]} icon={accidentMarkerIcon}>
+                  <Marker position={[safeUserLat, safeUserLng]} icon={accidentMarkerIcon}>
                     <Popup>
                       <div className="text-xs font-mono font-bold text-red-600 p-1">
                         🚨 ACCIDENT LOCATION ({activeAlert.type || 'SOS'})

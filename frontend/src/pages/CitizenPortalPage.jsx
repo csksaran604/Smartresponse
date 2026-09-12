@@ -247,34 +247,36 @@ export const CitizenPortalPage = () => {
         photo: photoToUse,
       };
 
-      // Broadcast to real-time emergency operator terminal
-      await broadcastEmergencySos({
-        id: alertId,
-        type: emergencyType,
-        emergencyType,
-        latitude: userLocation.lat,
-        longitude: userLocation.lng,
-        address: payload.address,
-        notes: notes ? notes : payload.description,
-        reporter: payload.reporter,
-        phone: userTypedPhone,
-        reporter_phone: userTypedPhone,
-        photo: photoToUse,
-        urgency,
-      }).catch(() => {});
-
-      const res = await accidentsApi.createAccident(payload);
-      setSosSent(res.data.accident);
+      // Immediately update citizen UI to dispatched state
+      setSosSent(payload);
+      setSubmitting(false);
       setNotes('');
       setSelectedFile(null);
       setPreviewUrl(null);
       setBase64Photo(null);
       setAiResult(null);
-      loadData();
+
+      // Background dispatch over cloud and mock API
+      Promise.allSettled([
+        broadcastEmergencySos({
+          id: alertId,
+          type: emergencyType,
+          emergencyType,
+          latitude: userLocation.lat,
+          longitude: userLocation.lng,
+          address: payload.address,
+          notes: notes ? notes : payload.description,
+          reporter: payload.reporter,
+          phone: userTypedPhone,
+          reporter_phone: userTypedPhone,
+          photo: photoToUse,
+          urgency,
+        }),
+        accidentsApi.createAccident(payload),
+      ]).then(() => loadData()).catch(() => {});
     } catch (err) {
       console.error('SOS dispatch error:', err);
       alert('SOS Transmission failed. Please dial 108 or 112 immediately.');
-    } finally {
       setSubmitting(false);
     }
   };

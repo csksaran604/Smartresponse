@@ -375,12 +375,15 @@ export const PublicSosPage = () => {
       window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: emergencyPayload }));
     } catch {}
 
-    try {
-      // 1. Broadcast over cloud real-time SSE channel to Operator terminal
-      await broadcastEmergencySos(emergencyPayload);
+    // Immediately update UI to confirmed dispatch state so citizen is never stuck on "TRANSMITTING..."
+    setSosSent(true);
+    setSentDetails(emergencyPayload);
+    setBroadcasting(false);
 
-      // 2. Also register into database/mock store
-      await accidentsApi.createAccident({
+    // Parallel background dispatch to cloud relays & mock API
+    Promise.allSettled([
+      broadcastEmergencySos(emergencyPayload),
+      accidentsApi.createAccident({
         latitude: emergencyPayload.latitude,
         longitude: emergencyPayload.longitude,
         address: emergencyPayload.address,
@@ -394,17 +397,10 @@ export const PublicSosPage = () => {
         reporter_phone: finalPhone,
         ai_confidence: 99.0,
         photo: finalPhoto,
-      }).catch(() => {});
-
-      setSosSent(true);
-      setSentDetails(emergencyPayload);
-    } catch (e) {
-      console.warn('Transmission error:', e);
-      setSosSent(true);
-      setSentDetails(emergencyPayload);
-    } finally {
-      setBroadcasting(false);
-    }
+      }),
+    ]).catch((err) => {
+      console.warn('Background sync note:', err);
+    });
   };
 
   const emergencyCategories = [
