@@ -16,7 +16,7 @@ import { formatDateTime } from '../utils/dateUtils';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
-  const { user, isAdmin, toggleRole } = useAuth();
+  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [notifications, setNotifications] = useState([]);
@@ -278,37 +278,34 @@ export const Navbar = ({ setIsSidebarOpen }) => {
           )}
         </div>
 
-        {/* User Account & 1-Click Role Switcher */}
+        {/* User Account / Role Display (Read-Only, No Switcher) */}
         <div className="flex items-center gap-2 border-l border-slate-800 pl-3">
-          <button
-            type="button"
-            onClick={toggleRole}
-            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer ${
+          <div
+            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border select-none ${
               isAdmin
-                ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20 text-rose-300'
-                : 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20 text-blue-300'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                : 'bg-slate-850 border-slate-800 text-slate-400'
             }`}
-            title={`Current Role: ${user?.role || (isAdmin ? 'ADMIN' : 'VIEWER')}. Tap to switch to ${isAdmin ? 'VIEWER' : 'ADMIN'}`}
           >
             <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black text-white shadow-md ${
-              isAdmin ? 'bg-gradient-to-br from-rose-500 to-amber-600 shadow-rose-950/50' : 'bg-gradient-to-br from-blue-500 to-cyan-600 shadow-blue-950/50'
+              isAdmin ? 'bg-gradient-to-br from-rose-600 to-red-600 shadow-rose-950/50' : 'bg-slate-750 text-slate-300'
             }`}>
               {isAdmin ? 'A' : 'V'}
             </div>
             <div className="hidden sm:block text-left">
               <p className="text-xs font-bold leading-tight flex items-center gap-1.5">
-                <span className="text-slate-200">{user?.username || (isAdmin ? 'Admin' : 'Viewer')}</span>
+                <span className="text-slate-200">{isAdmin ? 'Admin' : 'Viewer'}</span>
                 <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded font-bold uppercase ${
-                  isAdmin ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                  isAdmin ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-slate-700/40 text-slate-400 border border-slate-700'
                 }`}>
-                  {user?.role || (isAdmin ? 'ADMIN' : 'VIEWER')}
+                  {isAdmin ? 'ADMIN' : 'VIEWER'}
                 </span>
               </p>
-              <p className="text-[10px] font-mono text-slate-400">
-                Tap to toggle role
+              <p className="text-[10px] font-mono text-slate-500">
+                {isAdmin ? 'Owner Device' : 'Read-Only'}
               </p>
             </div>
-          </button>
+          </div>
         </div>
       </div>
     </header>

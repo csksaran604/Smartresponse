@@ -24,41 +24,44 @@ const DEFAULT_VIEWER = {
 };
 
 function resolveAutoUser() {
-  if (typeof window === 'undefined') return DEFAULT_ADMIN;
+  if (typeof window === 'undefined') return DEFAULT_VIEWER;
 
-  // 1. Check URL parameters for explicit role override (?role=admin or ?role=viewer)
+  // 1. Localhost or 127.0.0.1 (Owner's Development Computer) -> ALWAYS ADMIN
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+    try {
+      localStorage.setItem('ser_owner_device', 'true');
+    } catch {}
+    return DEFAULT_ADMIN;
+  }
+
+  // 2. Secret owner activation in URL for the owner's computer on Vercel (?owner or ?admin or ?key=saran)
   try {
     const params = new URLSearchParams(window.location.search);
-    const roleParam = params.get('role') || params.get('as');
-    if (roleParam) {
-      const upper = roleParam.toUpperCase();
-      if (upper === 'ADMIN' || upper === 'OPERATOR') {
-        localStorage.setItem('ser_role', 'ADMIN');
-        return DEFAULT_ADMIN;
-      } else if (upper === 'VIEWER') {
-        localStorage.setItem('ser_role', 'VIEWER');
-        return DEFAULT_VIEWER;
-      }
+    if (
+      params.has('owner') ||
+      params.has('admin') ||
+      params.get('role') === 'admin' ||
+      params.get('key') === 'saran' ||
+      params.get('key') === 'admin'
+    ) {
+      localStorage.setItem('ser_owner_device', 'true');
+      return DEFAULT_ADMIN;
+    }
+    if (params.has('viewer') || params.has('reset')) {
+      localStorage.removeItem('ser_owner_device');
+      return DEFAULT_VIEWER;
     }
   } catch {}
 
-  // 2. Check saved user preference in localStorage
+  // 3. Check if this specific computer/browser is the owner's verified device
   try {
-    const savedRole = localStorage.getItem('ser_role');
-    if (savedRole === 'ADMIN') return DEFAULT_ADMIN;
-    if (savedRole === 'VIEWER') return DEFAULT_VIEWER;
-  } catch {}
-
-  // 3. Localhost / Local PC development environment -> ALWAYS ADMIN
-  try {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
-      localStorage.setItem('ser_role', 'ADMIN');
+    if (localStorage.getItem('ser_owner_device') === 'true') {
       return DEFAULT_ADMIN;
     }
   } catch {}
 
-  // 4. Default for any other device / visitor -> VIEWER
+  // 4. EVERY OTHER USER / VISITOR -> STRICTLY VIEWER (Admin never granted)
   return DEFAULT_VIEWER;
 }
 
@@ -83,22 +86,11 @@ export const AuthProvider = ({ children }) => {
 
   const [loading, setLoading] = useState(false);
 
-  const toggleRole = () => {
-    const newRole = user?.role === 'ADMIN' ? 'VIEWER' : 'ADMIN';
-    const newUser = newRole === 'ADMIN' ? DEFAULT_ADMIN : DEFAULT_VIEWER;
-    setUser(newUser);
-    try {
-      localStorage.setItem('ser_role', newRole);
-      localStorage.setItem('ser_user', JSON.stringify(newUser));
-    } catch {}
-    return newUser;
-  };
-
   const logout = async () => {
-    // Seamlessly reset back to Viewer role without blocking with a login screen
+    // Viewer reset
     setUser(DEFAULT_VIEWER);
     try {
-      localStorage.setItem('ser_role', 'VIEWER');
+      localStorage.removeItem('ser_owner_device');
       localStorage.setItem('ser_user', JSON.stringify(DEFAULT_VIEWER));
     } catch {}
   };
@@ -111,19 +103,16 @@ export const AuthProvider = ({ children }) => {
       setUser(receivedUser);
       localStorage.setItem('ser_token', receivedToken);
       localStorage.setItem('ser_user', JSON.stringify(receivedUser));
-      localStorage.setItem('ser_role', receivedUser.role);
       return receivedUser;
     } catch {
-      // Fallback directly to Admin if credentials provided
       const adminUser = DEFAULT_ADMIN;
       setUser(adminUser);
-      localStorage.setItem('ser_role', 'ADMIN');
       return adminUser;
     }
   };
 
   const register = async (formData) => {
-    const defaultUser = DEFAULT_ADMIN;
+    const defaultUser = DEFAULT_VIEWER;
     setUser(defaultUser);
     return defaultUser;
   };
@@ -141,7 +130,6 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
-        toggleRole,
         setUser,
         isAdmin,
         isOperator,
