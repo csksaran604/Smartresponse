@@ -456,7 +456,7 @@ export const PublicSosPage = () => {
               </div>
               <h2 className="text-2xl font-black text-white">Emergency Response Alerted!</h2>
               <p className="text-xs text-slate-300 mt-2 leading-relaxed max-w-md mx-auto">
-                Your live GPS coordinates have been broadcast to the Operations Dispatch Control. The emergency siren is now ringing at the operator terminal.
+                Your live GPS coordinates have been broadcast to the Operations Dispatch Control. The emergency alert is now ringing on the Admin Dispatch Terminal.
               </p>
             </div>
 
@@ -490,7 +490,7 @@ export const PublicSosPage = () => {
                       LIVE CAMERA PROOF TRANSMITTED
                     </span>
                     <span className="text-[10px] text-slate-400 block mt-0.5">
-                      Photo delivered to operator terminal for rapid verification
+                      Photo delivered to Admin Dispatch Terminal for rapid verification
                     </span>
                   </div>
                 </div>

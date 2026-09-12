@@ -4,7 +4,7 @@
  * using Server-Sent Events (SSE) + active background polling fallback via ntfy.sh.
  */
 
-const EMERGENCY_TOPIC = 'ser_smartresponse_alerts_v2';
+const EMERGENCY_TOPIC = 'ser_smartresponse_dispatch_v4';
 const PUBLISH_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}`;
 const SUBSCRIBE_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/sse`;
 const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=10m`;
@@ -172,43 +172,61 @@ function parseRawMessage(raw) {
   // Case 1: raw.message is a JSON string containing our complete payload
   if (typeof raw.message === 'string') {
     try {
-      parsed = JSON.parse(raw.message);
+      const obj = JSON.parse(raw.message);
+      // Ensure it is an actual SOS alert payload (contains distress type, id or coordinates)
+      if (obj && (obj.id || obj.type || obj.emergencyType || obj.latitude != null)) {
+        parsed = obj;
+      }
     } catch {
       // Plain text message fallback
     }
   }
 
   // Case 2: raw is already the payload
-  if (!parsed && raw.latitude && raw.longitude) {
+  if (!parsed && raw.latitude != null && raw.longitude != null) {
     parsed = { ...raw };
   }
 
-  // Case 3: Reconstruct from text message
+  // Case 3: Reconstruct only if title/message explicitly contains distress keywords
   if (!parsed) {
     const text = (raw.title || '') + ' ' + (raw.message || '');
-    const detectedType = /traffic|crash|collision/i.test(text) ? 'Traffic' :
-                         /police|crime/i.test(text) ? 'Police' :
-                         /fire/i.test(text) ? 'Fire' :
-                         /medical|ambulance|health|injury/i.test(text) ? 'Medical' : 'Medical';
-    parsed = {
-      id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
-      type: detectedType,
-      emergencyType: detectedType,
-      latitude: 11.3410,
-      longitude: 77.7172,
-      address: cleanLocation(raw.message || 'Perundurai Road, Erode, Tamil Nadu'),
-      notes: raw.message || '',
-      urgency: 'Critical',
-      reporter_phone: cleanPhoneNumber('', raw.id),
-      phone: cleanPhoneNumber('', raw.id),
-      timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
-    };
+    if (/emergency|distress|accident|crash|fire|police|medical|ambulance/i.test(text)) {
+      const detectedType = /traffic|crash|collision/i.test(text) ? 'Traffic' :
+                           /police|crime/i.test(text) ? 'Police' :
+                           /fire/i.test(text) ? 'Fire' : 'Medical';
+      parsed = {
+        id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
+        type: detectedType,
+        emergencyType: detectedType,
+        latitude: 11.3410,
+        longitude: 77.7172,
+        address: cleanLocation(raw.message || 'Perundurai Road, Erode, Tamil Nadu'),
+        notes: raw.message || '',
+        urgency: 'Critical',
+        reporter_phone: cleanPhoneNumber('', raw.id),
+        phone: cleanPhoneNumber('', raw.id),
+        timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
+      };
+    }
   }
 
-  // Case 4: If ntfy delivered an attachment URL
+  // If still not a valid SOS alert, reject
+  if (!parsed) return null;
+
+  // Case 4: Attach attachment URL if delivered
   if (raw.attachment?.url) {
     parsed.photo = parsed.photo || raw.attachment.url;
   }
+
+  // Enforce consistent property names
+  const alertType = parsed.emergencyType || parsed.type || 'Medical';
+  parsed.type = alertType;
+  parsed.emergencyType = alertType;
+  parsed.address = cleanLocation(parsed.address);
+  const cleanPhone = (!isDummyPhoneNumber(parsed.phone) ? parsed.phone : '') ||
+                     (!isDummyPhoneNumber(parsed.reporter_phone) ? parsed.reporter_phone : '');
+  parsed.phone = cleanPhone || parsed.phone || cleanPhoneNumber('', parsed.id);
+  parsed.reporter_phone = parsed.phone;
 
   return parsed;
 }
@@ -293,14 +311,20 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
       if (res.ok) {
         const text = await res.text();
         const lines = text.trim().split('\n').filter(Boolean);
-        for (const line of lines) {
-          try {
-            const raw = JSON.parse(line);
-            if (raw.event === 'message') {
-              const alert = parseRawMessage(raw);
-              if (alert) handleNewAlert(alert);
+        const validAlerts = lines
+          .map((line) => {
+            try {
+              const raw = JSON.parse(line);
+              return raw.event === 'message' ? parseRawMessage(raw) : null;
+            } catch {
+              return null;
             }
-          } catch {}
+          })
+          .filter(Boolean)
+          .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+
+        for (const alert of validAlerts) {
+          handleNewAlert(alert);
         }
       }
     } catch (_e) {

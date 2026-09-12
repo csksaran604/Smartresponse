@@ -30,6 +30,7 @@ import { dashboardApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime } from '../utils/dateUtils';
+import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
 
 const SEVERITY_COLORS = {
   Critical: '#ef4444',
@@ -49,7 +50,13 @@ export const DashboardPage = () => {
   const [activeSos, setActiveSos] = useState(() => {
     try {
       const saved = localStorage.getItem('ser_active_sos');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 10 * 60 * 1000)) {
+          return parsed;
+        }
+      }
+      return null;
     } catch {
       return null;
     }
@@ -60,7 +67,15 @@ export const DashboardPage = () => {
       if (e.detail) setActiveSos(e.detail);
     };
     window.addEventListener('ser_emergency_sos', handleSos);
-    return () => window.removeEventListener('ser_emergency_sos', handleSos);
+
+    const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
+      if (incomingAlert) setActiveSos(incomingAlert);
+    });
+
+    return () => {
+      window.removeEventListener('ser_emergency_sos', handleSos);
+      unsubscribe();
+    };
   }, []);
 
   const fetchDashboardData = async () => {
