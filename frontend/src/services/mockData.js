@@ -199,6 +199,37 @@ const INITIAL_LOGS = [
   }
 ];
 
+export function cleanLocation(addr) {
+  if (!addr || typeof addr !== 'string') return 'Location Verified';
+  let cleaned = addr
+    .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
+    .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
+    .replace(/Live Citizen SOS\s*•?\s*/gi, '')
+    .replace(/Current Device Location/gi, '')
+    .trim();
+  // Remove leading bullets, commas, dashes
+  cleaned = cleaned.replace(/^[•\-\,\s]+/, '').trim();
+  if (!cleaned || cleaned.length < 2) {
+    return 'Perundurai Road, Erode, Tamil Nadu';
+  }
+  return cleaned;
+}
+
+export function cleanPhoneNumber(phone) {
+  if (!phone || typeof phone !== 'string') return '';
+  const trimmed = phone.trim();
+  if (
+    trimmed === '+91-98765-TEST0' ||
+    trimmed === 'Citizen Mobile Caller' ||
+    trimmed === 'Citizen Mobile SOS' ||
+    trimmed === 'Citizen' ||
+    trimmed.toLowerCase().includes('test0')
+  ) {
+    return '';
+  }
+  return trimmed;
+}
+
 function getStored(key, fallback) {
   try {
     const item = localStorage.getItem(key);
@@ -217,11 +248,72 @@ function setStored(key, val) {
 }
 
 export const mockDb = {
-  getIncidents: () => getStored(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS),
+  getIncidents: () => {
+    const raw = getStored(STORAGE_KEYS.INCIDENTS, INITIAL_INCIDENTS);
+    let mutated = false;
+    const sanitized = raw.map((inc) => {
+      let changed = false;
+      let newAddress = inc.address;
+      if (typeof inc.address === 'string' && (inc.address.includes('Live Tested') || inc.address.includes('GPS Position (±'))) {
+        newAddress = cleanLocation(inc.address);
+        changed = true;
+      }
+      let newPhone = inc.phone_number || inc.phone || '';
+      let newReporter = inc.reporter || '';
+      if (newReporter.includes('TEST0') || newReporter === 'Citizen Mobile Caller' || newReporter === 'Citizen Mobile SOS') {
+        newReporter = 'Citizen';
+        changed = true;
+      }
+      if (newPhone.includes('TEST0')) {
+        newPhone = '';
+        changed = true;
+      }
+      if (changed) mutated = true;
+      return {
+        ...inc,
+        address: newAddress,
+        phone_number: newPhone,
+        reporter: newReporter,
+      };
+    });
+    if (mutated) {
+      setStored(STORAGE_KEYS.INCIDENTS, sanitized);
+    }
+    return sanitized;
+  },
   saveIncidents: (data) => setStored(STORAGE_KEYS.INCIDENTS, data),
   getUnits: () => getStored(STORAGE_KEYS.UNITS, INITIAL_UNITS),
   saveUnits: (data) => setStored(STORAGE_KEYS.UNITS, data),
-  getNotifications: () => getStored(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS),
+  getNotifications: () => {
+    const raw = getStored(STORAGE_KEYS.NOTIFICATIONS, INITIAL_NOTIFICATIONS);
+    let mutated = false;
+    const sanitized = raw.map((notif) => {
+      let changed = false;
+      let newAddress = notif.address;
+      if (typeof notif.address === 'string' && (notif.address.includes('Live Tested') || notif.address.includes('GPS Position (±'))) {
+        newAddress = cleanLocation(notif.address);
+        changed = true;
+      }
+      let newMsg = notif.message || '';
+      if (newMsg.includes('Live Tested') || newMsg.includes('TEST0')) {
+        newMsg = newMsg
+          .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, cleanLocation(notif.address || ''))
+          .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
+          .replace(/\+91-98765-TEST0/g, 'Not Provided');
+        changed = true;
+      }
+      if (changed) mutated = true;
+      return {
+        ...notif,
+        address: newAddress,
+        message: newMsg,
+      };
+    });
+    if (mutated) {
+      setStored(STORAGE_KEYS.NOTIFICATIONS, sanitized);
+    }
+    return sanitized;
+  },
   saveNotifications: (data) => setStored(STORAGE_KEYS.NOTIFICATIONS, data),
   getLogs: () => getStored(STORAGE_KEYS.LOGS, INITIAL_LOGS),
   saveLogs: (data) => setStored(STORAGE_KEYS.LOGS, data),
@@ -426,7 +518,9 @@ export async function handleMockRequest(config) {
       list = list.filter(i => 
         i.incident_id?.toLowerCase().includes(q) ||
         i.address?.toLowerCase().includes(q) ||
-        i.description?.toLowerCase().includes(q)
+        i.description?.toLowerCase().includes(q) ||
+        i.phone_number?.toLowerCase().includes(q) ||
+        i.reporter?.toLowerCase().includes(q)
       );
     }
 
@@ -470,33 +564,38 @@ export async function handleMockRequest(config) {
 
   if (url === '/accidents' && method === 'post') {
     const incidents = mockDb.getIncidents();
+    const cleanAddr = cleanLocation(body?.address);
+    const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''));
+    const reporterLabel = userPhone ? `Citizen (${userPhone})` : (body?.reporter && !body?.reporter.includes('TEST0') ? body.reporter : 'Citizen Direct');
+
     const newInc = {
       id: Date.now(),
       incident_id: `INC-2026-${String(incidents.length + 1).padStart(3, '0')}`,
       date_time: new Date().toISOString(),
       created_at: new Date().toISOString(),
-      latitude: body?.latitude || 40.7527,
-      longitude: body?.longitude || -73.9818,
-      address: body?.address || 'Reported Incident Location',
-      description: body?.description || 'Emergency incident reported via terminal',
-      severity: body?.severity || 'High',
-      ai_confidence: body?.ai_confidence || 91.0,
+      latitude: body?.latitude || 11.3410,
+      longitude: body?.longitude || 77.7172,
+      address: cleanAddr,
+      description: body?.description ? body.description.replace(/Live Tested [^\.]+\./gi, '').replace(/\+91-98765-TEST0/g, userPhone || 'Not Provided') : 'Emergency incident reported via terminal',
+      severity: body?.severity || 'Critical',
+      ai_confidence: body?.ai_confidence || 95.0,
       verification_status: body?.verification_status || 'Pending',
       response_status: 'Pending',
       assigned_unit_id: null,
-      reporter: body?.reporter || 'Citizen / Camera Telemetry',
+      reporter: reporterLabel,
+      phone_number: userPhone,
       photo: body?.photo || body?.photo_url || null,
     };
 
     incidents.unshift(newInc);
     mockDb.saveIncidents(incidents);
 
-    // Add alert notification with full coordinates (atcharegai / thirkaregai) and photo
+    // Add alert notification with clean message and location
     const notifs = mockDb.getNotifications();
     notifs.unshift({
       id: Date.now(),
       title: `${newInc.severity.toUpperCase()}: ${newInc.incident_id} Reported`,
-      message: `${newInc.address} - ${newInc.description.slice(0, 80)}...`,
+      message: `${newInc.address} - ${newInc.description.slice(0, 100)}`,
       type: newInc.severity === 'Critical' ? 'Critical' : 'Warning',
       severity: newInc.severity.toLowerCase(),
       is_read: false,
@@ -722,11 +821,122 @@ export async function handleMockRequest(config) {
   // -------------------------------------------------------------
   // REPORTS
   // -------------------------------------------------------------
+  if (url.startsWith('/reports/accidents') && method === 'get') {
+    let list = mockDb.getIncidents();
+    if (params.severity) {
+      list = list.filter(i => (i.severity || '').toLowerCase() === params.severity.toLowerCase());
+    }
+    if (params.verification_status) {
+      list = list.filter(i => (i.verification_status || '').toLowerCase() === params.verification_status.toLowerCase());
+    }
+    if (params.response_status) {
+      list = list.filter(i => (i.response_status || '').toLowerCase() === params.response_status.toLowerCase());
+    }
+    if (params.start_date) {
+      const s = new Date(params.start_date).getTime();
+      list = list.filter(i => new Date(i.date_time).getTime() >= s);
+    }
+    if (params.end_date) {
+      const e = new Date(params.end_date).getTime() + 86400000;
+      list = list.filter(i => new Date(i.date_time).getTime() <= e);
+    }
+
+    const verified = list.filter(i => i.verification_status === 'Verified').length;
+    const rejected = list.filter(i => i.verification_status === 'Rejected').length;
+    const pending = list.filter(i => i.verification_status === 'Pending').length;
+
+    // Daily breakdown: count incidents per day
+    const dailyMap = {};
+    list.forEach(inc => {
+      const d = inc.date_time ? inc.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
+      dailyMap[d] = (dailyMap[d] || 0) + 1;
+    });
+    const dailyBreakdown = Object.entries(dailyMap)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return mockResponse({
+      total: list.length,
+      summary: {
+        verified,
+        rejected,
+        pending,
+      },
+      daily_breakdown: dailyBreakdown,
+      records: list,
+    });
+  }
+
+  if (url.startsWith('/reports/severity') && method === 'get') {
+    let list = mockDb.getIncidents();
+    if (params.severity) {
+      list = list.filter(i => (i.severity || '').toLowerCase() === params.severity.toLowerCase());
+    }
+    if (params.verification_status) {
+      list = list.filter(i => (i.verification_status || '').toLowerCase() === params.verification_status.toLowerCase());
+    }
+    const counts = { Critical: 0, High: 0, Medium: 0, Low: 0 };
+    list.forEach(i => {
+      const sev = i.severity || 'Medium';
+      if (counts[sev] !== undefined) {
+        counts[sev] += 1;
+      } else {
+        counts[sev] = 1;
+      }
+    });
+    const severity_distribution = Object.entries(counts).map(([severity, count]) => ({
+      severity,
+      count,
+    }));
+    return mockResponse({ severity_distribution });
+  }
+
+  if (url.startsWith('/reports/response-time') && method === 'get') {
+    const units = mockDb.getUnits();
+    const response_times_by_type = [
+      { unit_type: 'Ambulance', dispatches_tracked: 14, avg_dispatch_minutes: 4.2 },
+      { unit_type: 'Police', dispatches_tracked: 22, avg_dispatch_minutes: 3.1 },
+      { unit_type: 'Fire & Rescue', dispatches_tracked: 6, avg_dispatch_minutes: 5.8 },
+    ];
+    return mockResponse({
+      response_times_by_type,
+      unit_usage: units.map(u => ({
+        unit_id: u.unit_id,
+        vehicle_number: u.vehicle_number,
+        type: u.type,
+        total_assignments: Math.floor(Math.random() * 8 + 3),
+        current_status: u.status,
+      })),
+    });
+  }
+
+  if (url.startsWith('/reports/daily') && method === 'get') {
+    let list = mockDb.getIncidents();
+    const dailyMap = {};
+    list.forEach(inc => {
+      const d = inc.date_time ? inc.date_time.split('T')[0] : new Date().toISOString().split('T')[0];
+      dailyMap[d] = (dailyMap[d] || 0) + 1;
+    });
+    const dailyData = Object.entries(dailyMap)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    return mockResponse({ daily: dailyData, total: list.length });
+  }
+
+  if (url.startsWith('/reports/export-csv')) {
+    const incidents = mockDb.getIncidents();
+    let csv = 'Incident ID,Date/Time,Address,Severity,Verification Status,Response Status,Citizen Phone,Reporter\n';
+    incidents.forEach(i => {
+      csv += `"${i.incident_id}","${i.date_time}","${i.address}","${i.severity}","${i.verification_status}","${i.response_status}","${i.phone_number || ''}","${i.reporter || ''}"\n`;
+    });
+    return mockResponse({ csv, message: 'CSV generated successfully' });
+  }
+
   if (url.startsWith('/reports/')) {
     const analytics = mockDb.getAnalytics();
     return mockResponse({
       report_data: analytics,
-      total_records: 34,
+      total_records: mockDb.getIncidents().length,
       generated_at: new Date().toISOString(),
     });
   }

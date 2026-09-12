@@ -16,11 +16,13 @@ import {
   Camera,
   Compass,
   X,
-  ZoomIn
+  ZoomIn,
+  PhoneCall
 } from 'lucide-react';
 import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
 import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
+import { cleanLocation, cleanPhoneNumber } from '../services/mockData';
 
 export const AlertsPage = () => {
   const [notifications, setNotifications] = useState([]);
@@ -229,8 +231,14 @@ export const AlertsPage = () => {
 
             const lat = n.latitude != null ? Number(n.latitude) : (matchedInc?.latitude != null ? Number(matchedInc.latitude) : null);
             const lng = n.longitude != null ? Number(n.longitude) : (matchedInc?.longitude != null ? Number(matchedInc.longitude) : null);
-            const address = n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : 'Reported Citizen Location');
+            const address = cleanLocation(n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : ''));
             const photo = n.photo || matchedInc?.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${n.incident_id || n.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
+
+            const citizenPhone = cleanPhoneNumber(matchedInc?.phone_number || matchedInc?.phone || (typeof matchedInc?.reporter === 'string' && matchedInc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? matchedInc.reporter : '') || n.reporter_phone || '');
+            const displayMessage = (n.message || '')
+              .replace(/Live Tested [^\-]+-\s*/gi, '')
+              .replace(/\+91-98765-TEST0/g, citizenPhone || 'Not Provided')
+              .replace(/Citizen Mobile Caller/g, citizenPhone ? `Citizen (${citizenPhone})` : 'Citizen');
 
             return (
               <div
@@ -284,7 +292,7 @@ export const AlertsPage = () => {
                         )}
                       </div>
 
-                      <p className="text-xs text-slate-300 mt-1 leading-relaxed font-sans">{n.message}</p>
+                      <p className="text-xs text-slate-300 mt-1 leading-relaxed font-sans">{displayMessage}</p>
                     </div>
                   </div>
 
@@ -312,19 +320,35 @@ export const AlertsPage = () => {
                   </div>
                 </div>
 
-                {/* Accident Location (Place Only) */}
-                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2">
+                {/* Accident Location & Citizen Contact */}
+                <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/90 space-y-2.5">
                   <div className="flex items-start gap-2.5 text-xs">
                     <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5 animate-bounce" />
                     <div className="min-w-0 flex-1">
                       <span className="text-[10px] uppercase font-mono text-slate-400 block font-bold tracking-wider">
-                        துல்லியமான இடம் (LOCATION):
+                        விபத்து இடம் (LOCATION):
                       </span>
-                      <span className="text-slate-200 font-semibold text-xs block leading-snug mt-0.5">
+                      <span className="text-slate-100 font-semibold text-xs block leading-snug mt-0.5">
                         {address}
                       </span>
                     </div>
                   </div>
+
+                  {/* Citizen Phone Strip */}
+                  {citizenPhone && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/70 text-xs font-mono">
+                      <div className="flex items-center gap-2">
+                        <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-slate-400 text-[11px]">குடிமகன் தொடர்பு (Citizen Phone):</span>
+                      </div>
+                      <a
+                        href={`tel:${citizenPhone}`}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-colors"
+                      >
+                        📞 {citizenPhone}
+                      </a>
+                    </div>
+                  )}
 
                   {lat != null && lng != null ? (
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-850 text-xs font-mono">

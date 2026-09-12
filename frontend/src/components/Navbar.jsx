@@ -99,9 +99,9 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                 type: 'Medical',
                 latitude: lat,
                 longitude: lng,
-                address: addr || `Live Citizen SOS • ${lat.toFixed(5)}° N, ${lng.toFixed(5)}° E`,
-                notes: 'Diagnostic sound test: Verification of siren alarm and popup dispatch modal',
-                reporter_phone: '+91-98765-TEST0',
+                address: addr || `Perundurai Road, Erode, Tamil Nadu`,
+                notes: 'Emergency alarm and dispatch modal verification',
+                reporter_phone: '',
                 urgency: 'Critical',
                 timestamp: new Date().toISOString(),
               };
@@ -113,7 +113,7 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                 async (pos) => {
                   const lat = pos.coords.latitude;
                   const lng = pos.coords.longitude;
-                  let resolvedAddr = `Live Tested GPS Position (±${Math.round(pos.coords.accuracy)}m)`;
+                  let resolvedAddr = `Perundurai Road, Erode, Tamil Nadu`;
                   try {
                     const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
                     if (res.ok) {
@@ -123,21 +123,21 @@ export const Navbar = ({ setIsSidebarOpen }) => {
                         data.address?.city || data.address?.town || data.address?.state_district,
                       ].filter(Boolean);
                       if (parts.length > 0) {
-                        resolvedAddr = `Live Tested Citizen SOS • ${parts.join(', ')}`;
+                        resolvedAddr = parts.join(', ');
                       } else if (data.display_name) {
-                        resolvedAddr = `Live Tested Citizen SOS • ${data.display_name.split(',').slice(0, 2).join(',')}`;
+                        resolvedAddr = data.display_name.split(',').slice(0, 3).join(',').trim();
                       }
                     }
                   } catch {}
                   fireTestEvent(lat, lng, resolvedAddr);
                 },
                 () => {
-                  fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Current Device Location');
+                  fireTestEvent(11.3410, 77.7172, 'Perundurai Road, Erode, Tamil Nadu');
                 },
                 { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
               );
             } else {
-              fireTestEvent(13.0827, 80.2707, 'Live Tested Citizen SOS • Current Device Location');
+              fireTestEvent(11.3410, 77.7172, 'Perundurai Road, Erode, Tamil Nadu');
             }
           }}
           className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-mono border border-slate-700 transition-colors"

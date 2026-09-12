@@ -162,13 +162,24 @@ export const EmergencyAlertModal = () => {
       // Automatically register into backend/mock DB so it appears on the Live Map
       try {
         if (incomingAlert.latitude && incomingAlert.longitude) {
+          const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || '';
+          const userPhone = (!rawPhone.includes('TEST0') && rawPhone !== 'Citizen Mobile Caller') ? rawPhone.trim() : '';
+          const cleanAddr = (incomingAlert.address || 'Perundurai Road, Erode, Tamil Nadu')
+            .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
+            .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
+            .replace(/^[•\-\,\s]+/, '')
+            .trim() || 'Perundurai Road, Erode, Tamil Nadu';
+
           accidentsApi.createAccident({
             latitude: incomingAlert.latitude,
             longitude: incomingAlert.longitude,
-            address: incomingAlert.address || 'Live Citizen Location',
-            description: `[CITIZEN SOS] ${incomingAlert.type || 'Emergency'} distress call. Phone: ${incomingAlert.reporter_phone || incomingAlert.phone || 'Citizen'}. ${incomingAlert.notes || ''}`,
+            address: cleanAddr,
+            description: `[CITIZEN SOS] ${incomingAlert.type || 'Emergency'} distress call.${userPhone ? ` Phone: ${userPhone}.` : ''} ${incomingAlert.notes || ''}`,
             severity: 'Critical',
-            reporter: incomingAlert.reporter_phone || incomingAlert.phone || 'Citizen Mobile SOS',
+            reporter: userPhone ? `Citizen (${userPhone})` : 'Citizen SOS',
+            phone: userPhone,
+            phone_number: userPhone,
+            reporter_phone: userPhone,
             ai_confidence: 99.0,
             verification_status: 'Verified',
             photo: incomingAlert.photo || null,
@@ -264,8 +275,15 @@ export const EmergencyAlertModal = () => {
   };
   const AlertIcon = typeIcons[activeAlert.type] || AlertTriangle;
 
-  const callerPhone = activeAlert.reporter_phone || activeAlert.phone || null;
-  const hasValidPhone = callerPhone && callerPhone !== 'Citizen Mobile Caller' && callerPhone !== 'Citizen SOS';
+  const rawPhone = activeAlert.reporter_phone || activeAlert.phone || '';
+  const callerPhone = (!rawPhone.includes('TEST0') && rawPhone !== 'Citizen Mobile Caller') ? rawPhone.trim() : null;
+  const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
+
+  const cleanDisplayAddress = (activeAlert.address || 'Perundurai Road, Erode, Tamil Nadu')
+    .replace(/Live Tested GPS Position\s*(\(±\d+m\))?/gi, '')
+    .replace(/Live Tested Citizen SOS\s*•?\s*/gi, '')
+    .replace(/^[•\-\,\s]+/, '')
+    .trim() || 'Perundurai Road, Erode, Tamil Nadu';
 
   const exactLat = activeAlert.latitude != null ? Number(activeAlert.latitude).toFixed(5) : null;
   const exactLng = activeAlert.longitude != null ? Number(activeAlert.longitude).toFixed(5) : null;
@@ -511,7 +529,7 @@ export const EmergencyAlertModal = () => {
                     விபத்து இடம் / துல்லியமான முகவரி (LOCATION)
                   </span>
                   <p className="text-xs font-semibold text-slate-200 mt-0.5 leading-snug">
-                    {activeAlert.address || 'Live Citizen Location'}
+                    {cleanDisplayAddress}
                   </p>
                   {activeAlert.notes && activeAlert.notes !== activeAlert.address && (
                     <p className="text-[11px] text-amber-300/90 mt-1 font-mono italic">

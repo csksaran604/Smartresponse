@@ -14,13 +14,15 @@ import {
   AlertTriangle,
   Send,
   Radio,
-  Camera
+  Camera,
+  PhoneCall
 } from 'lucide-react';
 import { accidentsApi, unitsApi, assignmentsApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime } from '../utils/dateUtils';
+import { cleanLocation, cleanPhoneNumber } from '../services/mockData';
 
 export const IncidentDetailPage = () => {
   const { id } = useParams();
@@ -179,37 +181,58 @@ export const IncidentDetailPage = () => {
               Incident Dossier
             </h2>
 
-            <div className="grid grid-cols-2 gap-4 text-xs font-mono">
-              <div>
-                <p className="text-slate-400 uppercase text-[10px]">Location Address</p>
-                <p className="text-slate-200 font-sans font-medium mt-0.5 flex items-start gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                  <span>{incident.address}</span>
-                </p>
-              </div>
+            {(() => {
+              const cleanAddr = cleanLocation(incident.address);
+              const userPhone = cleanPhoneNumber(
+                incident.phone_number ||
+                incident.phone ||
+                (typeof incident.reporter === 'string' && incident.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? incident.reporter : '')
+              );
 
-              <div>
-                <p className="text-slate-400 uppercase text-[10px]">Coordinates</p>
-                <p className="text-slate-200 mt-0.5">
-                  {incident.latitude.toFixed(4)}, {incident.longitude.toFixed(4)}
-                </p>
-              </div>
+              return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+                  <div>
+                    <p className="text-slate-400 uppercase text-[10px]">Location Address</p>
+                    <p className="text-slate-200 font-sans font-medium mt-0.5 flex items-start gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                      <span className="leading-snug">{cleanAddr}</span>
+                    </p>
+                  </div>
 
-              <div>
-                <p className="text-slate-400 uppercase text-[10px]">Reporter / Feed</p>
-                <p className="text-slate-200 mt-0.5 flex items-center gap-1">
-                  <User className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>{incident.reporter}</span>
-                </p>
-              </div>
+                  <div>
+                    <p className="text-slate-400 uppercase text-[10px]">Citizen Contact</p>
+                    {userPhone ? (
+                      <div className="mt-1 flex items-center gap-2">
+                        <a
+                          href={`tel:${userPhone}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 border border-blue-500/30 text-xs font-bold"
+                        >
+                          <PhoneCall className="w-3 h-3 text-blue-400" />
+                          <span>{userPhone}</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <p className="text-slate-400 mt-1 italic text-[11px]">Not Provided</p>
+                    )}
+                  </div>
 
-              <div>
-                <p className="text-slate-400 uppercase text-[10px]">AI Confidence Score</p>
-                <p className="text-slate-200 mt-0.5 font-bold">
-                  {incident.ai_confidence}%
-                </p>
-              </div>
-            </div>
+                  <div>
+                    <p className="text-slate-400 uppercase text-[10px]">GPS Coordinates</p>
+                    <p className="text-slate-200 mt-0.5">
+                      {incident.latitude.toFixed(4)}, {incident.longitude.toFixed(4)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-slate-400 uppercase text-[10px]">Reporter / Source</p>
+                    <p className="text-slate-200 mt-0.5 flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>{incident.reporter && !incident.reporter.includes('TEST0') ? incident.reporter : 'Direct SOS Channel'}</span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div>
               <p className="text-slate-400 uppercase text-[10px] font-mono">Incident Summary Notes</p>

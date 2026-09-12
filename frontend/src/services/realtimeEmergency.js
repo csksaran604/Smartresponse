@@ -85,15 +85,18 @@ export async function broadcastEmergencySos(alertData) {
     } catch {}
   }
 
+  const userPhone = alertData.phone || alertData.reporter_phone || '';
+  const cleanPhone = (userPhone && !userPhone.includes('TEST0') && userPhone !== 'Citizen Mobile Caller') ? userPhone.trim() : '';
+
   const payload = {
     id: alertId,
     type: alertData.emergencyType || alertData.type || 'Medical',
-    latitude: alertData.latitude != null ? Number(alertData.latitude) : 13.0827,
-    longitude: alertData.longitude != null ? Number(alertData.longitude) : 80.2707,
-    address: alertData.address || `Live Citizen GPS Location`,
+    latitude: alertData.latitude != null ? Number(alertData.latitude) : 11.3410,
+    longitude: alertData.longitude != null ? Number(alertData.longitude) : 77.7172,
+    address: alertData.address || `Perundurai Road, Erode, Tamil Nadu`,
     notes: alertData.notes || 'Emergency assistance requested via citizen mobile portal',
     urgency: alertData.urgency || 'Critical',
-    reporter_phone: alertData.phone || alertData.reporter_phone || 'Citizen Mobile Caller',
+    reporter_phone: cleanPhone,
     photo: photoUrl || (rawPhoto && rawPhoto.length < 2000 ? rawPhoto : null),
     timestamp: new Date().toISOString(),
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
@@ -160,10 +163,10 @@ function parseRawMessage(raw) {
       type: (raw.title || raw.message || '').includes('POLICE') ? 'Police' : (raw.title || raw.message || '').includes('FIRE') ? 'Fire' : 'Medical',
       latitude: 13.0827,
       longitude: 80.2707,
-      address: raw.message || 'Live Citizen GPS Location',
+      address: raw.message || 'Erode, Tamil Nadu',
       notes: raw.message || '',
       urgency: 'Critical',
-      reporter_phone: 'Citizen Mobile Caller',
+      reporter_phone: '',
       timestamp: raw.time ? new Date(raw.time * 1000).toISOString() : new Date().toISOString(),
     };
   }

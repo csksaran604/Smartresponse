@@ -57,6 +57,14 @@ def get_accidents_report():
     rejected_count = sum(1 for a in accidents if a.verification_status == 'Rejected')
     pending_count = sum(1 for a in accidents if a.verification_status == 'Pending')
 
+    # Group by date for per-day accident counts
+    daily_counts = {}
+    for a in accidents:
+        if a.date_time:
+            d_str = a.date_time.strftime('%Y-%m-%d')
+            daily_counts[d_str] = daily_counts.get(d_str, 0) + 1
+    daily_breakdown = [{'date': k, 'count': v} for k, v in sorted(daily_counts.items())]
+
     return jsonify({
         'total': len(accidents),
         'summary': {
@@ -64,8 +72,22 @@ def get_accidents_report():
             'rejected': rejected_count,
             'pending': pending_count
         },
+        'daily_breakdown': daily_breakdown,
         'records': [a.to_dict() for a in accidents]
     }), 200
+
+
+@reports_bp.route('/daily', methods=['GET'])
+@jwt_required()
+def get_daily_report():
+    query = apply_filters(Accident.query, request.args)
+    daily_counts = query.with_entities(
+        func.date(Accident.date_time).label('report_date'),
+        func.count(Accident.id).label('incident_count')
+    ).group_by(func.date(Accident.date_time)).order_by(func.date(Accident.date_time)).all()
+
+    result = [{'date': str(row.report_date), 'count': row.incident_count} for row in daily_counts]
+    return jsonify({'daily': result, 'total': sum(r['count'] for r in result)}), 200
 
 
 @reports_bp.route('/severity', methods=['GET'])

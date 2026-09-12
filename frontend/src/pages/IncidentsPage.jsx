@@ -6,13 +6,16 @@ import {
   ShieldCheck,
   XCircle,
   Eye,
-  RefreshCw
+  RefreshCw,
+  PhoneCall,
+  MapPin
 } from 'lucide-react';
 import { accidentsApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime } from '../utils/dateUtils';
+import { cleanLocation, cleanPhoneNumber } from '../services/mockData';
 
 export const IncidentsPage = () => {
   const { isOperator } = useAuth();
@@ -190,6 +193,7 @@ export const IncidentsPage = () => {
                 <th className="py-3 px-4">Incident Code</th>
                 <th className="py-3 px-4">Date / Time</th>
                 <th className="py-3 px-4">Location Address</th>
+                <th className="py-3 px-4">Citizen Contact</th>
                 <th className="py-3 px-4">Severity</th>
                 <th className="py-3 px-4">AI Score</th>
                 <th className="py-3 px-4">Verification</th>
@@ -201,81 +205,109 @@ export const IncidentsPage = () => {
             <tbody className="divide-y divide-slate-800/60 font-mono">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-rose-500" />
                     Loading incidents from database...
                   </td>
                 </tr>
               ) : incidents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-500">
+                  <td colSpan={10} className="py-12 text-center text-slate-500">
                     No matching incidents found.
                   </td>
                 </tr>
               ) : (
-                incidents.map((inc) => (
-                  <tr key={inc.id} className="hover:bg-slate-800/30 transition-colors font-sans">
-                    <td className="py-3 px-4 font-mono font-bold text-rose-400 whitespace-nowrap">
-                      {inc.incident_id}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-400 text-xs whitespace-nowrap">
-                      {formatDateTime(inc.date_time)}
-                    </td>
-                    <td className="py-3 px-4 max-w-[220px] truncate text-slate-200">
-                      {inc.address}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <SeverityBadge severity={inc.severity} />
-                    </td>
-                    <td className="py-3 px-4 font-mono whitespace-nowrap">
-                      <span className="font-semibold text-slate-300">{inc.ai_confidence}%</span>
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <StatusBadge status={inc.verification_status} type="verification" />
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <StatusBadge status={inc.response_status} type="response" />
-                    </td>
-                    <td className="py-3 px-4 font-mono text-xs text-slate-400 whitespace-nowrap">
-                      {inc.assigned_unit ? (
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">
-                          {inc.assigned_unit.unit_id}
-                        </span>
-                      ) : (
-                        <span className="text-slate-600">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {isOperator && inc.verification_status === 'Pending' && (
-                          <>
-                            <button
-                              onClick={() => handleQuickVerify(inc.id, 'Verified')}
-                              className="p-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-colors"
-                              title="Verify Incident"
-                            >
-                              <ShieldCheck className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleQuickVerify(inc.id, 'Rejected')}
-                              className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-colors"
-                              title="Reject Incident"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                            </button>
-                          </>
+                incidents.map((inc) => {
+                  const userPhone = cleanPhoneNumber(
+                    inc.phone_number ||
+                    inc.phone ||
+                    (typeof inc.reporter === 'string' && inc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? inc.reporter : '')
+                  );
+                  const cleanAddr = cleanLocation(inc.address);
+
+                  return (
+                    <tr key={inc.id} className="hover:bg-slate-800/30 transition-colors font-sans">
+                      <td className="py-3 px-4 font-mono font-bold text-rose-400 whitespace-nowrap">
+                        {inc.incident_id}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-400 text-xs whitespace-nowrap">
+                        {formatDateTime(inc.date_time)}
+                      </td>
+                      <td className="py-3 px-4 min-w-[200px] max-w-[280px] text-slate-200">
+                        <div className="flex items-start gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                          <span className="leading-snug text-xs font-medium text-slate-100">{cleanAddr}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {userPhone ? (
+                          <a
+                            href={`tel:${userPhone}`}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 text-xs font-mono font-bold transition-colors"
+                            title="Click to call citizen"
+                          >
+                            <PhoneCall className="w-3 h-3 text-blue-400" />
+                            <span>{userPhone}</span>
+                          </a>
+                        ) : (
+                          <span className="text-[11px] font-mono text-slate-500 italic">
+                            {inc.reporter && !inc.reporter.includes('TEST0') && !inc.reporter.includes('Caller') ? inc.reporter : 'Not Provided'}
+                          </span>
                         )}
-                        <Link
-                          to={`/incidents/${inc.id}`}
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors inline-flex items-center gap-1"
-                        >
-                          <Eye className="w-3 h-3" />
-                          <span>View</span>
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <SeverityBadge severity={inc.severity} />
+                      </td>
+                      <td className="py-3 px-4 font-mono whitespace-nowrap">
+                        <span className="font-semibold text-slate-300">{inc.ai_confidence}%</span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <StatusBadge status={inc.verification_status} type="verification" />
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <StatusBadge status={inc.response_status} type="response" />
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-slate-400 whitespace-nowrap">
+                        {inc.assigned_unit ? (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">
+                            {inc.assigned_unit.unit_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">Unassigned</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {isOperator && inc.verification_status === 'Pending' && (
+                            <>
+                              <button
+                                onClick={() => handleQuickVerify(inc.id, 'Verified')}
+                                className="p-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 transition-colors"
+                                title="Verify Incident"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleQuickVerify(inc.id, 'Rejected')}
+                                className="p-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 transition-colors"
+                                title="Reject Incident"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+                          <Link
+                            to={`/incidents/${inc.id}`}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition-colors inline-flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View</span>
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

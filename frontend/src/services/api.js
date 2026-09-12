@@ -140,6 +140,7 @@ export const reportsApi = {
   getAccidentsReport: (params) => api.get('/api/reports/accidents', { params }),
   getSeverityReport: (params) => api.get('/api/reports/severity', { params }),
   getResponseTimeReport: (params) => api.get('/api/reports/response-time', { params }),
+  getDailyReport: (params) => api.get('/api/reports/daily', { params }),
   getExportCsvUrl: (params) => {
     const query = new URLSearchParams(params).toString();
     return `/api/reports/export-csv?${query}`;

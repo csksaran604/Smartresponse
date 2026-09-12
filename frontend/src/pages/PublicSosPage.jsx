@@ -114,12 +114,20 @@ export const PublicSosPage = () => {
       );
       if (res.ok) {
         const data = await res.json();
-        return data.display_name;
+        const parts = [
+          data.address?.road || data.address?.suburb || data.address?.neighbourhood,
+          data.address?.city || data.address?.town || data.address?.state_district,
+          data.address?.state,
+        ].filter(Boolean);
+        if (parts.length > 0) {
+          return parts.join(', ');
+        }
+        return data.display_name?.split(',').slice(0, 3).join(', ').trim() || data.display_name;
       }
     } catch (e) {
       console.warn('Geocoding error:', e);
     }
-    return `GPS Fix: ${lat.toFixed(5)}° N, ${lon.toFixed(5)}° E`;
+    return `Location Fix: ${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E`;
   };
 
   // Request continuous high-accuracy browser geolocation
@@ -130,8 +138,8 @@ export const PublicSosPage = () => {
     if (!navigator.geolocation) {
       setGpsError('Geolocation is not supported by your device browser.');
       setLocating(false);
-      setCoords({ lat: 13.0827, lng: 80.2707, accuracy: 20 });
-      setAddress('Chennai, Tamil Nadu (Default Coordinates)');
+      setCoords({ lat: 11.3410, lng: 77.7172, accuracy: 20 });
+      setAddress('Perundurai Road, Erode, Tamil Nadu');
       return;
     }
 
@@ -148,10 +156,10 @@ export const PublicSosPage = () => {
         if (err.code === 1) {
           setGpsError('Location access was denied. Please allow GPS permission in your browser for dispatch accuracy.');
         } else {
-          setGpsError('GPS satellite signal acquiring... Using approximate mobile network cell.');
+          setGpsError('GPS satellite signal acquiring... Using approximate network cell.');
         }
-        setCoords({ lat: 13.0827, lng: 80.2707, accuracy: 30 });
-        setAddress('Live Location (Acquiring Satellites)');
+        setCoords({ lat: 11.3410, lng: 77.7172, accuracy: 30 });
+        setAddress('Perundurai Road, Erode, Tamil Nadu');
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
     );
@@ -306,13 +314,15 @@ export const PublicSosPage = () => {
   // Immediate Transmission
   const transmitEmergencySos = async () => {
     setBroadcasting(true);
+    const cleanPhone = phone.trim();
     const emergencyPayload = {
       emergencyType,
-      latitude: coords?.lat != null ? Number(coords.lat) : 13.0827,
-      longitude: coords?.lng != null ? Number(coords.lng) : 80.2707,
+      latitude: coords?.lat != null ? Number(coords.lat) : 11.3410,
+      longitude: coords?.lng != null ? Number(coords.lng) : 77.7172,
       address,
       notes: notes.trim(),
-      phone: phone.trim() || 'Citizen Mobile Caller',
+      phone: cleanPhone,
+      reporter_phone: cleanPhone,
       photo: capturedPhoto || null,
       urgency: 'Critical',
     };
@@ -326,9 +336,12 @@ export const PublicSosPage = () => {
         latitude: emergencyPayload.latitude,
         longitude: emergencyPayload.longitude,
         address: emergencyPayload.address,
-        description: `[CITIZEN SOS] ${emergencyPayload.emergencyType} alert: ${emergencyPayload.notes || 'Immediate assistance required.'}`,
+        description: `[CITIZEN SOS] ${emergencyPayload.emergencyType} alert: ${emergencyPayload.notes || 'Immediate assistance required.'}${cleanPhone ? ` • Contact: ${cleanPhone}` : ''}`,
         severity: 'Critical',
-        reporter: emergencyPayload.phone,
+        reporter: cleanPhone ? `Citizen (${cleanPhone})` : 'Citizen Direct',
+        phone: cleanPhone,
+        phone_number: cleanPhone,
+        reporter_phone: cleanPhone,
         ai_confidence: 99.0,
         photo: capturedPhoto || null,
       }).catch(() => {});
