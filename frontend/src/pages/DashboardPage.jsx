@@ -106,15 +106,6 @@ export const DashboardPage = () => {
     fetchDashboardData();
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-10 h-10 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin mb-4" />
-        <p className="text-xs font-mono text-slate-400">Loading operations telemetry...</p>
-      </div>
-    );
-  }
-
   // Ensure daily accidents data is always available
   const dailyAccidentsData = React.useMemo(() => {
     if (analytics?.by_day && analytics.by_day.length > 0) {
@@ -138,6 +129,15 @@ export const DashboardPage = () => {
     });
     return Object.values(daysMap);
   }, [analytics?.by_day, recentIncidents]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <div className="w-10 h-10 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin mb-4" />
+        <p className="text-xs font-mono text-slate-400">Loading operations telemetry...</p>
+      </div>
+    );
+  }
 
   const statCards = [
     {
