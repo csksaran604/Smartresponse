@@ -211,7 +211,10 @@ export const CitizenPortalPage = () => {
           ? `${typeLabels[emergencyType]}: ${notes}`
           : `${typeLabels[emergencyType]} requested at live citizen location.`,
         severity: urgency,
+        emergency_type: emergencyType,
+        type: emergencyType,
         reporter: user?.full_name || 'Citizen (SOS App)',
+        phone: user?.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '',
         ai_confidence: aiResult ? aiResult.confidence_score : 98.0,
         detection_id: aiResult ? aiResult.id : null,
         photo: base64Photo || null,

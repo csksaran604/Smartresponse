@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
-import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
+import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from '../services/mockData';
 
 // Custom glowing blue radar pin for Citizen's live location
 const citizenPinIcon = L.divIcon({
@@ -88,9 +88,16 @@ export const PublicSosPage = () => {
   const [locating, setLocating] = useState(true);
   const [gpsError, setGpsError] = useState(null);
 
-  const [emergencyType, setEmergencyType] = useState('Fire');
+  const [emergencyType, setEmergencyType] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_selected_distress_type') || 'Medical') : 'Medical'));
   const [notes, setNotes] = useState('');
-  const [phone, setPhone] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : ''));
+  const [phone, setPhone] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ser_user_phone') || '';
+      const isDummy = (p) => !p || p.includes('94431') || p.includes('test0') || p.includes('10987') || p.includes('12345');
+      if (saved && !isDummy(saved)) return saved;
+    }
+    return '';
+  });
   const [countdown, setCountdown] = useState(null);
   const [sosSent, setSosSent] = useState(false);
   const [sentDetails, setSentDetails] = useState(null);
@@ -323,17 +330,22 @@ export const PublicSosPage = () => {
   // Immediate Transmission
   const transmitEmergencySos = async () => {
     setBroadcasting(true);
-    const enteredPhone = phone.trim() || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '');
-    if (enteredPhone && typeof window !== 'undefined') {
+    const storedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+    const userTypedPhone = (!isDummyPhoneNumber(phone.trim()) ? phone.trim() : '') ||
+                           (!isDummyPhoneNumber(storedPhone) ? storedPhone : '');
+
+    if (userTypedPhone && typeof window !== 'undefined') {
       try {
-        localStorage.setItem('ser_user_phone', enteredPhone);
+        localStorage.setItem('ser_user_phone', userTypedPhone);
       } catch {}
     }
-    const cleanPhone = cleanPhoneNumber(enteredPhone, Date.now());
-    const finalPhone = enteredPhone || cleanPhone;
+    const cleanPhone = userTypedPhone || cleanPhoneNumber('', Date.now());
+    const finalPhone = userTypedPhone || cleanPhone;
     const finalPhoto = capturedPhoto || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null);
     const cleanAddr = cleanLocation(address);
     const emergencyPayload = {
+      id: `SOS-${Date.now().toString().slice(-6)}`,
+      type: emergencyType,
       emergencyType,
       latitude: coords?.lat != null ? Number(coords.lat) : 11.3410,
       longitude: coords?.lng != null ? Number(coords.lng) : 77.7172,
@@ -343,7 +355,16 @@ export const PublicSosPage = () => {
       reporter_phone: finalPhone,
       photo: finalPhoto,
       urgency: 'Critical',
+      timestamp: new Date().toISOString(),
     };
+
+    try {
+      localStorage.setItem('ser_active_sos', JSON.stringify(emergencyPayload));
+      localStorage.setItem('ser_selected_distress_type', emergencyType);
+      if (userTypedPhone) localStorage.setItem('ser_user_phone', userTypedPhone);
+      if (finalPhoto) localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
+      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: emergencyPayload }));
+    } catch {}
 
     try {
       // 1. Broadcast over cloud real-time SSE channel to Operator terminal
@@ -356,6 +377,8 @@ export const PublicSosPage = () => {
         address: emergencyPayload.address,
         description: `[CITIZEN SOS] ${emergencyPayload.emergencyType} alert: ${emergencyPayload.notes || 'Immediate assistance required.'}${finalPhone ? ` • Contact: ${finalPhone}` : ''}`,
         severity: 'Critical',
+        emergency_type: emergencyPayload.emergencyType,
+        type: emergencyPayload.emergencyType,
         reporter: finalPhone ? `Citizen (${finalPhone})` : 'Citizen Direct',
         phone: finalPhone,
         phone_number: finalPhone,
@@ -851,7 +874,12 @@ export const PublicSosPage = () => {
                     <button
                       key={cat.id}
                       type="button"
-                      onClick={() => setEmergencyType(cat.id)}
+                      onClick={() => {
+                        setEmergencyType(cat.id);
+                        try {
+                          localStorage.setItem('ser_selected_distress_type', cat.id);
+                        } catch {}
+                      }}
                       className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all ${
                         isSelected
                           ? `${cat.color} border-2 shadow-lg`
@@ -872,7 +900,14 @@ export const PublicSosPage = () => {
                 <input
                   type="tel"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    try {
+                      if (e.target.value && !isDummyPhoneNumber(e.target.value)) {
+                        localStorage.setItem('ser_user_phone', e.target.value);
+                      }
+                    } catch {}
+                  }}
                   placeholder="Your Phone Number (Optional, for responder callback)"
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 font-mono"
                 />

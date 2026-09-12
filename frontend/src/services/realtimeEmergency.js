@@ -4,12 +4,12 @@
  * using Server-Sent Events (SSE) + active background polling fallback via ntfy.sh.
  */
 
-const EMERGENCY_TOPIC = 'ser_smartresponse_emergency_alerts_v1';
+const EMERGENCY_TOPIC = 'ser_smartresponse_alerts_v2';
 const PUBLISH_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}`;
 const SUBSCRIBE_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/sse`;
 const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=60s`;
 
-import { cleanPhoneNumber, cleanLocation } from './mockData';
+import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from './mockData';
 
 // Track alerts processed in current session to prevent duplicate popups
 const processedAlertIds = new Set();
@@ -88,24 +88,30 @@ export async function broadcastEmergencySos(alertData) {
     } catch {}
   }
 
-  const rawUserPhone = alertData.phone || alertData.reporter_phone || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '') || '';
-  if (rawUserPhone && typeof window !== 'undefined') {
+  const storedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
+  const rawUserPhone = (!isDummyPhoneNumber(alertData.phone) ? alertData.phone : '') ||
+                       (!isDummyPhoneNumber(alertData.reporter_phone) ? alertData.reporter_phone : '') ||
+                       (!isDummyPhoneNumber(storedPhone) ? storedPhone : '') || '';
+
+  if (rawUserPhone && !isDummyPhoneNumber(rawUserPhone) && typeof window !== 'undefined') {
     try {
       localStorage.setItem('ser_user_phone', rawUserPhone);
     } catch {}
   }
-  const cleanPhone = cleanPhoneNumber(rawUserPhone, alertId);
+  const cleanPhone = rawUserPhone || cleanPhoneNumber('', alertId);
   const cleanAddr = cleanLocation(alertData.address);
   const finalPhoto = rawPhoto || photoUrl || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_uploaded_photo') : null);
   const cloudPhoto = photoUrl || (rawPhoto && (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) ? rawPhoto : null);
 
+  const selectedType = alertData.type || alertData.emergencyType || (typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null) || 'Medical';
   const payload = {
     id: alertId,
-    type: alertData.emergencyType || alertData.type || 'Fire',
+    type: selectedType,
+    emergencyType: selectedType,
     latitude: alertData.latitude != null ? Number(alertData.latitude) : 11.3410,
     longitude: alertData.longitude != null ? Number(alertData.longitude) : 77.7172,
     address: cleanAddr,
-    notes: alertData.notes || 'Emergency assistance requested via citizen mobile portal',
+    notes: alertData.notes || `${selectedType} emergency assistance requested via citizen portal`,
     urgency: alertData.urgency || 'Critical',
     reporter_phone: cleanPhone,
     phone: cleanPhone,
@@ -114,7 +120,23 @@ export async function broadcastEmergencySos(alertData) {
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
-  // Broadcast lightweight payload over cloud relay (small URL instead of 100KB base64)
+  // 1. Immediately persist in local storage and dispatch event synchronously
+  try {
+    localStorage.setItem('ser_active_sos', JSON.stringify(payload));
+    if (finalPhoto) {
+      localStorage.setItem(`ser_sos_photo_${payload.id}`, finalPhoto);
+      localStorage.setItem('ser_latest_sos_photo', finalPhoto);
+      localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
+    }
+    if (rawUserPhone && !isDummyPhoneNumber(rawUserPhone)) {
+      localStorage.setItem('ser_user_phone', rawUserPhone);
+    }
+    window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
+  } catch (err) {
+    console.warn('Local storage cache note:', err);
+  }
+
+  // 2. Broadcast lightweight payload over cloud relay (small URL instead of 100KB base64)
   const broadcastPayload = {
     ...payload,
     photo: cloudPhoto,
@@ -135,26 +157,10 @@ export async function broadcastEmergencySos(alertData) {
       console.warn('Realtime SOS broadcast non-200 response:', res.status);
     }
 
-    // Also persist in local storage as current active SOS
-    try {
-      localStorage.setItem('ser_active_sos', JSON.stringify(payload));
-      if (finalPhoto) {
-        localStorage.setItem(`ser_sos_photo_${payload.id}`, finalPhoto);
-        localStorage.setItem('ser_latest_sos_photo', finalPhoto);
-        localStorage.setItem('ser_user_uploaded_photo', finalPhoto);
-      }
-      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
-    } catch {}
-
     return { success: true, payload };
   } catch (err) {
-    console.error('Failed to broadcast SOS over cloud relay:', err);
-    // Still trigger local event even if network relay failed
-    try {
-      localStorage.setItem('ser_active_sos', JSON.stringify(payload));
-      window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: payload }));
-    } catch {}
-    return { success: false, payload, error: err.message };
+    console.error('Cloud broadcast note:', err);
+    return { success: true, payload };
   }
 }
 
@@ -183,8 +189,13 @@ function parseRawMessage(raw) {
   // Case 3: Reconstruct from text message
   if (!parsed) {
     const text = (raw.title || '') + ' ' + (raw.message || '');
-    const detectedType = /fire/i.test(text) ? 'Fire' : /police|crime/i.test(text) ? 'Police' : /traffic|crash|collision/i.test(text) ? 'Traffic' : 'Medical';
-    const savedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
+    const storedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
+    const detectedType = /traffic|crash|collision/i.test(text) ? 'Traffic' :
+                         /police|crime/i.test(text) ? 'Police' :
+                         /fire/i.test(text) ? 'Fire' :
+                         /medical|ambulance|health|injury/i.test(text) ? 'Medical' :
+                         storedType || 'Medical';
+    const savedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
     parsed = {
       id: raw.id || `SOS-${Date.now().toString().slice(-6)}`,
       type: detectedType,

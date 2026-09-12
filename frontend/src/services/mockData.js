@@ -328,30 +328,52 @@ export const REALISTIC_CITIZEN_PHONES = [
 
 export const SAMPLE_ACCIDENT_PHOTO = 'https://images.unsplash.com/photo-1599423300746-b62533397364?w=600&auto=format&fit=crop&q=80';
 
-export function cleanPhoneNumber(phone, fallbackSeed = '') {
-  const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
-  const trimmed = typeof phone === 'string' ? phone.trim() : '';
-  const isPlaceholderOrGeneric = (
-    !trimmed ||
-    trimmed.toLowerCase().includes('test0') ||
-    trimmed === 'Citizen Mobile Caller' ||
-    trimmed === 'Citizen Mobile SOS' ||
-    trimmed === 'Citizen' ||
-    trimmed === 'Citizen Direct' ||
-    trimmed === 'Not Provided' ||
-    REALISTIC_CITIZEN_PHONES.includes(trimmed)
+export function isDummyPhoneNumber(num) {
+  if (!num) return true;
+  const s = String(num).trim();
+  return (
+    REALISTIC_CITIZEN_PHONES.includes(s) ||
+    s.toLowerCase().includes('test0') ||
+    s.includes('94431 98765') ||
+    s.includes('94431') ||
+    s.includes('Citizen') ||
+    s.includes('Not Provided') ||
+    s.includes('test')
   );
+}
 
-  if (userSavedPhone && /\d{4,}/.test(userSavedPhone.trim()) && isPlaceholderOrGeneric) {
-    return userSavedPhone.trim();
+export function cleanPhoneNumber(phone, fallbackSeed = '') {
+  // 1. Check if user typed their real phone number
+  if (typeof window !== 'undefined') {
+    try {
+      const userPhone = localStorage.getItem('ser_user_phone');
+      if (userPhone && !isDummyPhoneNumber(userPhone) && /\d{4,}/.test(userPhone.trim())) {
+        // If the phone passed in is dummy or empty, use the real user phone!
+        if (isDummyPhoneNumber(phone)) {
+          return userPhone.trim();
+        }
+      } else if (userPhone && isDummyPhoneNumber(userPhone)) {
+        // Purge dummy number accidentally stored in user phone slot
+        localStorage.removeItem('ser_user_phone');
+      }
+    } catch {}
   }
 
-  if (trimmed && !isPlaceholderOrGeneric && /\d{4,}/.test(trimmed)) {
+  const trimmed = typeof phone === 'string' ? phone.trim() : '';
+
+  // If phone passed in is a real phone number entered by user, return it directly!
+  if (trimmed && !isDummyPhoneNumber(trimmed) && /\d{4,}/.test(trimmed)) {
     return trimmed;
   }
 
-  if (userSavedPhone && /\d{4,}/.test(userSavedPhone.trim())) {
-    return userSavedPhone.trim();
+  // Check userPhone in storage again
+  if (typeof window !== 'undefined') {
+    try {
+      const userPhone = localStorage.getItem('ser_user_phone');
+      if (userPhone && !isDummyPhoneNumber(userPhone) && /\d{4,}/.test(userPhone.trim())) {
+        return userPhone.trim();
+      }
+    } catch {}
   }
 
   // Assign deterministic realistic citizen mobile number from pool
@@ -448,15 +470,12 @@ export const mockDb = {
       }
       let newMsg = notif.message || '';
       let newTitle = notif.title || '';
-      let newType = notif.type || 'Fire';
+      let newType = notif.type || notif.emergency_type || 'Medical';
       const notifPhone = cleanPhoneNumber(notif.reporter_phone || notif.phone || '', notif.id);
       const notifPhoto = notif.photo || (typeof window !== 'undefined' ? localStorage.getItem('ser_latest_sos_photo') : null) || SAMPLE_ACCIDENT_PHOTO;
 
       if (newMsg.includes('Medical distress call. Emergency alarm and dispatch modal verification')) {
-        newMsg = newMsg.replace('Medical distress call. Emergency alarm and dispatch modal verification', 'Fire distress call. Citizen caller reported vehicle fire hazard.');
-        newTitle = newTitle.replace('Reported', 'Reported (Fire)');
-        newType = 'Fire';
-        changed = true;
+        newMsg = newMsg.replace('Medical distress call. Emergency alarm and dispatch modal verification', 'Emergency distress call. Immediate responder dispatch.');
       }
       if (newMsg.includes('Live Tested') || newMsg.includes('TEST0')) {
         newMsg = newMsg
@@ -471,10 +490,6 @@ export const mockDb = {
       }
       if (notif.reporter_phone !== notifPhone) {
         notif.reporter_phone = notifPhone;
-        changed = true;
-      }
-      if (notif.type === 'Medical' && (newMsg.includes('Fire') || newTitle.includes('Fire'))) {
-        newType = 'Fire';
         changed = true;
       }
       if (changed) mutated = true;
@@ -747,7 +762,14 @@ export async function handleMockRequest(config) {
     const incidents = mockDb.getIncidents();
     const cleanAddr = cleanLocation(body?.address);
     const desc = body?.description || '';
-    const detectedType = body?.emergency_type || body?.emergencyType || body?.type || (/fire/i.test(desc) ? 'Fire' : /police|crime/i.test(desc) ? 'Police' : /traffic|crash|collision/i.test(desc) ? 'Traffic' : 'Fire');
+    const storedType = typeof window !== 'undefined' ? (localStorage.getItem('ser_selected_distress_type') || '') : '';
+    const detectedType = body?.emergency_type || body?.emergencyType || body?.type || (
+      /traffic|crash|collision/i.test(desc) ? 'Traffic' :
+      /police|crime/i.test(desc) ? 'Police' :
+      /fire/i.test(desc) ? 'Fire' :
+      /medical|ambulance|health|injury/i.test(desc) ? 'Medical' :
+      storedType || 'Medical'
+    );
     const storedUserPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
     const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || storedUserPhone || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
     const photo = body?.photo || body?.photo_url || (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo') || null) : null);

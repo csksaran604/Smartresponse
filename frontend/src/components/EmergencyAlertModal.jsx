@@ -23,9 +23,9 @@ import {
   ZoomIn
 } from 'lucide-react';
 import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
-import { startEmergencySiren, stopEmergencySiren } from '../utils/sirenSound';
 import { accidentsApi } from '../services/api';
-import { cleanPhoneNumber, cleanLocation } from '../services/mockData';
+import { startEmergencySiren, stopEmergencySiren } from '../utils/sirenSound';
+import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from '../services/mockData';
 
 // Custom Map Markers
 const accidentMarkerIcon = L.divIcon({
@@ -136,9 +136,14 @@ export const EmergencyAlertModal = () => {
         if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 10 * 60 * 1000)) {
           const userSavedPhone = localStorage.getItem('ser_user_phone') || '';
           const userUploadedPhoto = localStorage.getItem('ser_user_uploaded_photo') || null;
-          if (userSavedPhone) {
+          const userSelectedType = localStorage.getItem('ser_selected_distress_type') || null;
+          if (userSavedPhone && !isDummyPhoneNumber(userSavedPhone)) {
             parsed.reporter_phone = userSavedPhone;
             parsed.phone = userSavedPhone;
+          }
+          if (userSelectedType) {
+            parsed.type = userSelectedType;
+            parsed.emergencyType = userSelectedType;
           }
           if (userUploadedPhoto) {
             parsed.photo = userUploadedPhoto;
@@ -171,14 +176,17 @@ export const EmergencyAlertModal = () => {
       }
 
       const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-      const rawPhone = userSavedPhone || incomingAlert.reporter_phone || incomingAlert.phone || '';
-      const userPhone = cleanPhoneNumber(rawPhone, incomingAlert.id);
+      const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
+      const rawPhone = realSavedPhone || (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') || (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '') || '';
+      const userPhone = rawPhone || cleanPhoneNumber('', incomingAlert.id);
       const cleanAddr = cleanLocation(incomingAlert.address);
-      const alertType = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
+      const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
+      const alertType = incomingAlert.emergencyType || incomingAlert.type || userSelectedType || 'Medical';
 
       incomingAlert.reporter_phone = userPhone;
       incomingAlert.phone = userPhone;
       incomingAlert.type = alertType;
+      incomingAlert.emergencyType = alertType;
       incomingAlert.address = cleanAddr;
 
       setActiveAlert(incomingAlert);
@@ -202,6 +210,8 @@ export const EmergencyAlertModal = () => {
             address: cleanAddr,
             description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${incomingAlert.notes || ''}`,
             severity: 'Critical',
+            emergency_type: alertType,
+            type: alertType,
             reporter: `Citizen (${userPhone})`,
             phone: userPhone,
             phone_number: userPhone,
@@ -226,10 +236,17 @@ export const EmergencyAlertModal = () => {
             if (cachedPhoto) incomingAlert.photo = cachedPhoto;
           } catch {}
         }
-        const rawPhone = incomingAlert.reporter_phone || incomingAlert.phone || (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-        incomingAlert.reporter_phone = cleanPhoneNumber(rawPhone, incomingAlert.id);
-        incomingAlert.phone = incomingAlert.reporter_phone;
-        incomingAlert.type = incomingAlert.type || incomingAlert.emergencyType || 'Fire';
+        const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
+        const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
+        const rawPhone = realSavedPhone || (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') || (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '') || '';
+        const userPhone = rawPhone || cleanPhoneNumber('', incomingAlert.id);
+        const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
+        const alertType = incomingAlert.emergencyType || incomingAlert.type || userSelectedType || 'Medical';
+
+        incomingAlert.reporter_phone = userPhone;
+        incomingAlert.phone = userPhone;
+        incomingAlert.type = alertType;
+        incomingAlert.emergencyType = alertType;
         incomingAlert.address = cleanLocation(incomingAlert.address);
 
         setActiveAlert(incomingAlert);
@@ -322,12 +339,20 @@ export const EmergencyAlertModal = () => {
     Fire: Flame,
     Traffic: AlertTriangle,
   };
-  const distressType = activeAlert.type || activeAlert.emergencyType || (activeAlert.notes && /fire/i.test(activeAlert.notes) ? 'Fire' : 'Fire');
-  const AlertIcon = typeIcons[distressType] || Flame;
+  const userSelectedType = typeof window !== 'undefined' ? localStorage.getItem('ser_selected_distress_type') : null;
+  const distressType = activeAlert.emergencyType || activeAlert.type || userSelectedType || (
+    activeAlert.notes && /traffic|crash|collision/i.test(activeAlert.notes) ? 'Traffic' :
+    activeAlert.notes && /police|crime/i.test(activeAlert.notes) ? 'Police' :
+    activeAlert.notes && /fire/i.test(activeAlert.notes) ? 'Fire' :
+    activeAlert.notes && /medical|ambulance|health/i.test(activeAlert.notes) ? 'Medical' :
+    'Medical'
+  );
+  const AlertIcon = typeIcons[distressType] || Ambulance;
 
   const userSavedPhone = (typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') : '') || '';
-  const rawPhone = userSavedPhone || activeAlert.reporter_phone || activeAlert.phone || '';
-  const callerPhone = cleanPhoneNumber(rawPhone, activeAlert.id);
+  const realSavedPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : '';
+  const rawPhone = realSavedPhone || (!isDummyPhoneNumber(activeAlert.reporter_phone) ? activeAlert.reporter_phone : '') || (!isDummyPhoneNumber(activeAlert.phone) ? activeAlert.phone : '') || '';
+  const callerPhone = rawPhone || cleanPhoneNumber('', activeAlert.id);
   const hasValidPhone = Boolean(callerPhone && callerPhone.length > 5);
   const userUploadedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null;
   const displayPhoto = userUploadedPhoto || activeAlert.photo || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);

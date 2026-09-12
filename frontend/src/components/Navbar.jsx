@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { notificationsApi, healthApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
-import { cleanPhoneNumber, cleanLocation, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
+import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const Navbar = ({ setIsSidebarOpen }) => {
   const { user, logout } = useAuth();
@@ -104,14 +104,17 @@ export const Navbar = ({ setIsSidebarOpen }) => {
               const userSavedPhoto = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || localStorage.getItem('ser_latest_sos_photo')) : null;
               const recentPhoto = userSavedPhoto || recentSos?.photo || null;
               const userSavedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
-              const citizenPhone = userSavedPhone ? cleanPhoneNumber(userSavedPhone) : cleanPhoneNumber(recentSos?.phone || '', 'SOS-FIRE');
+              const realPhone = !isDummyPhoneNumber(userSavedPhone) ? userSavedPhone : (!isDummyPhoneNumber(recentSos?.phone) ? recentSos.phone : '');
+              const citizenPhone = realPhone || cleanPhoneNumber('', 'SOS-CITIZEN');
               const userSavedNotes = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_notes') || '') : '';
               const alertNotes = userSavedNotes || recentSos?.notes || 'Citizen reported emergency distress call. Immediate rescue dispatched.';
 
+              const userSavedType = typeof window !== 'undefined' ? (localStorage.getItem('ser_selected_distress_type') || recentSos?.emergencyType || recentSos?.type || 'Medical') : 'Medical';
+
               const testAlert = {
-                id: recentSos?.id || `SOS-FIRE-${Date.now().toString().slice(-4)}`,
-                type: 'Fire',
-                emergencyType: 'Fire',
+                id: recentSos?.id || `SOS-${Date.now().toString().slice(-4)}`,
+                type: userSavedType,
+                emergencyType: userSavedType,
                 latitude: recentSos?.latitude || lat,
                 longitude: recentSos?.longitude || lng,
                 address: cleanLocation(recentSos?.address || addr || `Perundurai Road, Erode, Tamil Nadu`),

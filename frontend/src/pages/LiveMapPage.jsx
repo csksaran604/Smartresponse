@@ -480,7 +480,10 @@ export const LiveMapPage = () => {
         address: userLocation.address || `GPS: ${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}`,
         description: desc,
         severity: sosSeverity,
+        emergency_type: sosType,
+        type: sosType,
         reporter: user?.full_name || 'Citizen User',
+        phone: typeof window !== 'undefined' ? localStorage.getItem('ser_user_phone') || '' : '',
         ai_confidence: 96.0,
       };
 

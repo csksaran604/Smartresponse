@@ -241,11 +241,11 @@ export const AlertsPage = () => {
               matchedInc?.incident_id || n.incident_id || n.id
             );
             const displayMessage = (n.message || '')
-              .replace(/Medical distress call\. Emergency alarm and dispatch modal verification/g, 'Fire Emergency distress call. Vehicle collision and fire hazard reported.')
+              .replace(/Medical distress call\. Emergency alarm and dispatch modal verification/g, 'Emergency distress call. Immediate responder dispatch.')
               .replace(/Live Tested [^\-]+-\s*/gi, '')
               .replace(/\+91-98765-TEST0/g, citizenPhone)
               .replace(/Citizen Mobile Caller/g, `Citizen (${citizenPhone})`);
-            const displayTitle = (n.title || '').replace('Reported', 'Reported (Fire)');
+            const displayTitle = n.title || '';
             const displayPhoto = photo || userUploadedPhoto || (typeof window !== 'undefined' ? (localStorage.getItem(`ser_sos_photo_${n.incident_id || n.id}`) || localStorage.getItem('ser_latest_sos_photo')) : null);
 
             return (
