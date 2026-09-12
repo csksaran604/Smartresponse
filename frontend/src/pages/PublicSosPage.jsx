@@ -31,6 +31,7 @@ import {
 import { broadcastEmergencySos } from '../services/realtimeEmergency';
 import { accidentsApi } from '../services/api';
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from '../services/mockData';
+import { useAuth } from '../context/AuthContext';
 
 // Custom glowing blue radar pin for Citizen's live location
 const citizenPinIcon = L.divIcon({
@@ -84,6 +85,9 @@ const compressImage = (dataUrl, maxWidth = 640, maxHeight = 480, quality = 0.65)
 };
 
 export const PublicSosPage = () => {
+  const { isAdmin } = useAuth();
+  const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+
   const [coords, setCoords] = useState(null);
   const [address, setAddress] = useState('Acquiring high-precision GPS satellite fix...');
   const [locating, setLocating] = useState(true);
@@ -429,15 +433,17 @@ export const PublicSosPage = () => {
           </div>
         </div>
 
-        {/* Emergency Dispatch Operations Dashboard */}
-        <Link
-          to="/dashboard"
-          className="text-xs font-mono text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
-          title="Open Emergency Operations Dashboard"
-        >
-          <LayoutDashboard className="w-3.5 h-3.5 text-rose-400" />
-          <span className="font-semibold">Dashboard</span>
-        </Link>
+        {/* Emergency Dispatch Operations Dashboard - ONLY visible to Admin */}
+        {isOwnerAdmin && (
+          <Link
+            to="/dashboard"
+            className="text-xs font-mono text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
+            title="Open Emergency Operations Dashboard"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5 text-rose-400" />
+            <span className="font-semibold">Dashboard</span>
+          </Link>
+        )}
       </header>
 
       {/* Main SOS Container */}

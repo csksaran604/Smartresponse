@@ -1,10 +1,9 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldAlert } from 'lucide-react';
 
-export const ProtectedRoute = ({ allowedRoles = [] }) => {
-  const { user, loading } = useAuth();
+export const ProtectedRoute = () => {
+  const { isAdmin, loading } = useAuth();
 
   if (loading) {
     return (
@@ -17,6 +16,13 @@ export const ProtectedRoute = ({ allowedRoles = [] }) => {
     );
   }
 
-  // Auto-authenticated - never block with login screens
+  // Check if owner/admin device
+  const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+
+  // Viewers are strictly prohibited from viewing the admin dashboard - redirect directly to Citizen SOS
+  if (!isOwnerAdmin) {
+    return <Navigate to="/sos" replace />;
+  }
+
   return <Outlet />;
 };

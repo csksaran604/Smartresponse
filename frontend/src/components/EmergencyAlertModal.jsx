@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -90,6 +90,7 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 
 export const EmergencyAlertModal = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAdmin } = useAuth();
   const [activeAlert, setActiveAlert] = useState(null);
   const [isMuted, setIsMuted] = useState(true);
@@ -172,19 +173,18 @@ export const EmergencyAlertModal = () => {
       incomingAlert.address = cleanAddr;
       incomingAlert.photo = remotePhoto;
 
+      // STRICTLY ADMIN TERMINAL ONLY: Citizen mobile or viewer devices must NEVER display this popup modal or play sirens!
+      const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+      if (!isOwnerAdmin) {
+        return;
+      }
+
       setActiveAlert(incomingAlert);
 
       // Emergency Siren: Audible ONLY for Admin device
-      const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
-      if (isOwnerAdmin) {
-        enableSiren(true);
-        startEmergencySiren();
-        setIsMuted(false);
-      } else {
-        stopEmergencySiren();
-        enableSiren(false);
-        setIsMuted(true);
-      }
+      enableSiren(true);
+      startEmergencySiren();
+      setIsMuted(false);
 
       // Desktop browser notification
       if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -221,36 +221,35 @@ export const EmergencyAlertModal = () => {
 
     // Also listen to local ser_emergency_sos custom events
     const handleDirectSos = (e) => {
-      if (e.detail) {
-        const incomingAlert = { ...e.detail };
-        const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
-        const cleanAddr = cleanLocation(incomingAlert.address);
-        const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
-                            (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
-        const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
-        const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || null;
+      if (!e.detail) return;
 
-        incomingAlert.reporter_phone = userPhone;
-        incomingAlert.phone = userPhone;
-        incomingAlert.type = alertType;
-        incomingAlert.emergencyType = alertType;
-        incomingAlert.address = cleanAddr;
-        incomingAlert.photo = alertPhoto;
-
-        setActiveAlert(incomingAlert);
-
-        // Emergency Siren: Audible ONLY for Admin device
-        const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
-        if (isOwnerAdmin) {
-          enableSiren(true);
-          startEmergencySiren();
-          setIsMuted(false);
-        } else {
-          stopEmergencySiren();
-          enableSiren(false);
-          setIsMuted(true);
-        }
+      // STRICTLY ADMIN TERMINAL ONLY: Citizen mobile or viewer devices must NEVER display this popup modal or play sirens!
+      const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+      if (!isOwnerAdmin) {
+        return;
       }
+
+      const incomingAlert = { ...e.detail };
+      const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
+      const cleanAddr = cleanLocation(incomingAlert.address);
+      const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
+                          (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
+      const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
+      const alertPhoto = incomingAlert.photo || incomingAlert.photo_url || null;
+
+      incomingAlert.reporter_phone = userPhone;
+      incomingAlert.phone = userPhone;
+      incomingAlert.type = alertType;
+      incomingAlert.emergencyType = alertType;
+      incomingAlert.address = cleanAddr;
+      incomingAlert.photo = alertPhoto;
+
+      setActiveAlert(incomingAlert);
+
+      // Emergency Siren: Audible ONLY for Admin device
+      enableSiren(true);
+      startEmergencySiren();
+      setIsMuted(false);
     };
     window.addEventListener('ser_emergency_sos', handleDirectSos);
 
@@ -331,7 +330,12 @@ export const EmergencyAlertModal = () => {
     navigate(`/map?focusLat=${lat}&focusLng=${lng}&route=true`);
   };
 
-  if (!activeAlert) return null;
+  const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+
+  // Never render on citizen SOS page or for non-admin viewers
+  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
+    return null;
+  }
 
   const typeIcons = {
     Medical: Ambulance,

@@ -19,10 +19,12 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
-// Smart Root Route: Mobile phones go directly to Citizen SOS portal, Desktop goes to Operator Dashboard
+// Smart Root Route: Mobile phones and Viewers go directly to Citizen SOS portal, Desktop Admin goes to Operator Dashboard
 const RootRoute = () => {
   const isMobile = typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  if (isMobile) {
+  const isOwner = typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true';
+
+  if (isMobile || !isOwner) {
     return <Navigate to="/sos" replace />;
   }
   return <DashboardPage />;
@@ -32,7 +34,7 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        {/* Global Emergency Alert Listener (Siren + Modal when mobile triggers SOS) */}
+        {/* Global Emergency Alert Listener (Siren + Modal when mobile triggers SOS - Admin Only) */}
         <EmergencyAlertModal />
 
         <Routes>
@@ -40,12 +42,12 @@ function App() {
           <Route path="/sos" element={<PublicSosPage />} />
           <Route path="/citizen" element={<PublicSosPage />} />
 
-          {/* Login/Register routes bypass directly */}
+          {/* Login/Register routes bypass directly to appropriate destination */}
           <Route path="/login" element={<RootRoute />} />
           <Route path="/register" element={<RootRoute />} />
 
-          {/* Operations Center - Auto-authenticated (Admin for owner, Viewer for others) */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'EMERGENCY_OPERATOR', 'VIEWER']} />}>
+          {/* Operations Center - Restricted to Admin / Owner Device */}
+          <Route element={<ProtectedRoute />}>
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<RootRoute />} />
               <Route path="/dashboard" element={<DashboardPage />} />
