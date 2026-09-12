@@ -1,24 +1,27 @@
 /**
- * Real-Time Emergency SOS Cloud Relay Service
- * Connects public citizen mobile devices directly with the Operator Dispatch Terminal
- * using Server-Sent Events (SSE) + active background polling fallback via ntfy.sh.
+ * Real-Time Emergency SOS Cloud Relay Service (Dual-Relay Redundant Architecture)
+ * Connects public citizen mobile devices directly with the Admin Dispatch Terminal
+ * using Server-Sent Events (SSE) + background catch-up polling with zero rate-limit issues.
  */
-
-const EMERGENCY_TOPIC = 'ser_smartresponse_dispatch_v4';
-const PUBLISH_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}`;
-const SUBSCRIBE_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/sse`;
-const POLL_URL = `https://ntfy.sh/${EMERGENCY_TOPIC}/json?poll=1&since=10m`;
 
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from './mockData';
 
-// Track alerts processed in current session to prevent duplicate popups
+export const EMERGENCY_TOPIC = 'ser_emergency_live_v5';
+
+// Redundant relay hosts prevent single-point-of-failure or 429 rate limit blocks
+export const RELAY_HOSTS = [
+  'https://ntfy.envs.net',
+  'https://ntfy.sh',
+];
+
+// Track alerts processed in current session to prevent duplicate popups across dual relays
 const processedAlertIds = new Set();
 
 /**
  * Uploads citizen captured photo to cloud relay file hosting
  * and returns direct public image URL
  */
-async function uploadPhotoToCloud(photo) {
+export async function uploadPhotoToCloud(photo) {
   if (!photo) return null;
   if (typeof photo === 'string' && (photo.startsWith('http://') || photo.startsWith('https://'))) {
     return photo;
@@ -41,24 +44,31 @@ async function uploadPhotoToCloud(photo) {
 
     if (!blob) return null;
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
+    // Try primary relay first
+    for (const host of RELAY_HOSTS) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
 
-    const res = await fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}_uploads`, {
-      method: 'PUT',
-      headers: {
-        Filename: `sos_${Date.now()}.jpg`,
-        Title: 'Citizen SOS Accident Photo',
-      },
-      body: blob,
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+        const res = await fetch(`${host}/${EMERGENCY_TOPIC}_uploads`, {
+          method: 'PUT',
+          headers: {
+            Filename: `sos_${Date.now()}.jpg`,
+            Title: 'Citizen SOS Accident Photo',
+          },
+          body: blob,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.attachment?.url) {
-        return data.attachment.url;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.attachment?.url) {
+            return data.attachment.url;
+          }
+        }
+      } catch (e) {
+        console.warn(`Upload fallback attempt on ${host} note:`, e);
       }
     }
   } catch (err) {
@@ -68,13 +78,13 @@ async function uploadPhotoToCloud(photo) {
 }
 
 /**
- * Broadcasts an SOS alert from any mobile phone or computer to all listening operators
+ * Broadcasts an SOS alert from any mobile phone to all listening Admin terminals
  */
 export async function broadcastEmergencySos(alertData) {
   const rawPhoto = alertData.photo || alertData.photo_url || null;
   const alertId = alertData.id || `SOS-${Date.now().toString().slice(-6)}`;
 
-  // Cache photo locally on current reporting device
+  // Cache photo locally on reporting device
   if (rawPhoto) {
     try {
       localStorage.setItem(`ser_sos_photo_${alertId}`, rawPhoto);
@@ -85,7 +95,7 @@ export async function broadcastEmergencySos(alertData) {
     }
   }
 
-  // Upload photo to cloud file relay with timeout so operator gets direct public photo URL
+  // Upload photo to cloud file relay to get a small public URL
   let photoUrl = null;
   if (rawPhoto) {
     try {
@@ -124,7 +134,7 @@ export async function broadcastEmergencySos(alertData) {
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
-  // 1. Immediately persist in local storage and dispatch event on reporter device
+  // 1. Persist locally on reporting device
   try {
     localStorage.setItem('ser_active_sos', JSON.stringify({ ...payload, photo: rawPhoto || finalPhoto }));
     window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: { ...payload, photo: rawPhoto || finalPhoto } }));
@@ -132,7 +142,7 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. Broadcast lightweight payload over cloud relay (pure ASCII headers prevent fetch ByteString crash)
+  // 2. Broadcast over redundant dual cloud relays (ASCII headers prevent fetch ByteString errors)
   const broadcastHeaders = {
     'Title': `EMERGENCY SOS: ${String(payload.type).toUpperCase()}`,
     'Priority': '5',
@@ -143,28 +153,26 @@ export async function broadcastEmergencySos(alertData) {
     broadcastHeaders['Attach'] = finalPhoto;
   }
 
-  try {
-    const res = await fetch(PUBLISH_URL, {
-      method: 'POST',
-      headers: broadcastHeaders,
-      body: JSON.stringify(payload),
-    });
+  const broadcastResults = await Promise.allSettled(
+    RELAY_HOSTS.map(async (host) => {
+      const res = await fetch(`${host}/${EMERGENCY_TOPIC}`, {
+        method: 'POST',
+        headers: broadcastHeaders,
+        body: JSON.stringify(payload),
+      });
+      return { host, status: res.status };
+    })
+  );
 
-    if (!res.ok) {
-      console.warn('Realtime SOS broadcast non-200 response:', res.status);
-    }
+  console.log('[SER Relay] Broadcast results across dual relays:', broadcastResults);
 
-    return { success: true, payload };
-  } catch (err) {
-    console.error('Cloud broadcast note:', err);
-    return { success: true, payload };
-  }
+  return { success: true, payload };
 }
 
 /**
  * Parses raw SSE / poll message into a structured SOS payload
  */
-function parseRawMessage(raw) {
+export function parseRawMessage(raw) {
   if (!raw) return null;
 
   let parsed = null;
@@ -173,13 +181,10 @@ function parseRawMessage(raw) {
   if (typeof raw.message === 'string') {
     try {
       const obj = JSON.parse(raw.message);
-      // Ensure it is an actual SOS alert payload (contains distress type, id or coordinates)
       if (obj && (obj.id || obj.type || obj.emergencyType || obj.latitude != null)) {
         parsed = obj;
       }
-    } catch {
-      // Plain text message fallback
-    }
+    } catch {}
   }
 
   // Case 2: raw is already the payload
@@ -187,7 +192,7 @@ function parseRawMessage(raw) {
     parsed = { ...raw };
   }
 
-  // Case 3: Reconstruct only if title/message explicitly contains distress keywords
+  // Case 3: Reconstruct from text message with emergency keywords
   if (!parsed) {
     const text = (raw.title || '') + ' ' + (raw.message || '');
     if (/emergency|distress|accident|crash|fire|police|medical|ambulance/i.test(text)) {
@@ -210,10 +215,9 @@ function parseRawMessage(raw) {
     }
   }
 
-  // If still not a valid SOS alert, reject
   if (!parsed) return null;
 
-  // Case 4: Attach attachment URL if delivered
+  // Attach attachment URL if delivered
   if (raw.attachment?.url) {
     parsed.photo = parsed.photo || raw.attachment.url;
   }
@@ -232,14 +236,14 @@ function parseRawMessage(raw) {
 }
 
 /**
- * Subscribes to the real-time emergency channel with dual SSE + Polling Fallback
+ * Subscribes to the real-time emergency channel with dual SSE + Catch-up Polling
  */
 export function subscribeToEmergencyAlerts(onAlertReceived) {
   if (typeof window === 'undefined') {
     return () => {};
   }
 
-  let eventSource = null;
+  let eventSources = [];
   let isClosed = false;
   let pollTimer = null;
 
@@ -257,7 +261,7 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     }
 
     processedAlertIds.add(alert.id);
-    console.log('[SER Relay] 🚨 NEW INCOMING SOS ALERT:', alert);
+    console.log('[SER Relay] 🚨 INCOMING SOS RECEIVED ON ADMIN DISPATCH:', alert);
 
     try {
       localStorage.setItem('ser_active_sos', JSON.stringify(alert));
@@ -267,90 +271,94 @@ export function subscribeToEmergencyAlerts(onAlertReceived) {
     onAlertReceived(alert);
   };
 
-  // 1. Primary: Server-Sent Events (SSE) connection
+  // 1. Primary: Server-Sent Events (SSE) stream on redundant hosts
   const connectSse = () => {
     if (isClosed || typeof EventSource === 'undefined') return;
 
-    try {
-      eventSource = new EventSource(SUBSCRIBE_URL);
+    eventSources.forEach((es) => {
+      try { es.close(); } catch {}
+    });
+    eventSources = [];
 
-      eventSource.onopen = () => {
-        console.log('[SER Relay] Active SSE connection open on emergency channel.');
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          const raw = JSON.parse(event.data);
-          if (raw.event !== 'message') return;
-
-          const alert = parseRawMessage(raw);
-          if (alert) handleNewAlert(alert);
-        } catch (err) {
-          console.warn('[SER Relay] SSE parse error:', err);
-        }
-      };
-
-      eventSource.onerror = () => {
-        if (eventSource) eventSource.close();
-        if (!isClosed) {
-          setTimeout(connectSse, 5000);
-        }
-      };
-    } catch (e) {
-      console.warn('[SER Relay] SSE setup error:', e);
-    }
+    RELAY_HOSTS.forEach((host) => {
+      try {
+        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse`);
+        es.onopen = () => {
+          console.log(`[SER Relay] SSE open on ${host}`);
+        };
+        es.onmessage = (event) => {
+          try {
+            const raw = JSON.parse(event.data);
+            if (raw.event !== 'message') return;
+            const alert = parseRawMessage(raw);
+            if (alert) handleNewAlert(alert);
+          } catch (err) {
+            console.warn('[SER Relay] SSE parse error:', err);
+          }
+        };
+        es.onerror = () => {
+          try { es.close(); } catch {}
+        };
+        eventSources.push(es);
+      } catch (e) {
+        console.warn(`SSE setup note for ${host}:`, e);
+      }
+    });
   };
 
-  // 2. Secondary: Active background polling fallback (every 4 seconds)
-  // Ensures alerts are never missed even if the browser sleeps or disconnects SSE
+  // 2. Secondary: Catch-up poll (every 20 seconds, avoids 429 rate limits)
   const pollFallback = async () => {
     if (isClosed) return;
 
-    try {
-      const res = await fetch(POLL_URL);
-      if (res.ok) {
-        const text = await res.text();
-        const lines = text.trim().split('\n').filter(Boolean);
-        const validAlerts = lines
-          .map((line) => {
-            try {
-              const raw = JSON.parse(line);
-              return raw.event === 'message' ? parseRawMessage(raw) : null;
-            } catch {
-              return null;
-            }
-          })
-          .filter(Boolean)
-          .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+    for (const host of RELAY_HOSTS) {
+      try {
+        const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=10m`);
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.trim().split('\n').filter(Boolean);
+          const validAlerts = lines
+            .map((line) => {
+              try {
+                const raw = JSON.parse(line);
+                return raw.event === 'message' ? parseRawMessage(raw) : null;
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean)
+            .sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
 
-        for (const alert of validAlerts) {
-          handleNewAlert(alert);
+          for (const alert of validAlerts) {
+            handleNewAlert(alert);
+          }
+          break; // Stop after first successful host
         }
-      }
-    } catch (_e) {
-      // Ignore network hiccups on poll
+      } catch {}
     }
 
     if (!isClosed) {
-      pollTimer = setTimeout(pollFallback, 4000);
+      pollTimer = setTimeout(pollFallback, 20000);
     }
   };
 
-  // Listen to window custom event if triggered in same tab or child window
+  // Listen to window custom events
   const handleLocalCustomEvent = (e) => {
     if (e.detail) handleNewAlert(e.detail);
   };
   window.addEventListener('ser_emergency_sos', handleLocalCustomEvent);
 
-  // Start both SSE and Polling
+  // Start SSE stream & initial catch-up poll
   connectSse();
   pollFallback();
 
   return () => {
     isClosed = true;
-    if (eventSource) eventSource.close();
+    eventSources.forEach((es) => {
+      try { es.close(); } catch {}
+    });
+    eventSources = [];
     if (pollTimer) clearTimeout(pollTimer);
     window.removeEventListener('ser_emergency_sos', handleLocalCustomEvent);
-    console.log('[SER Relay] Cleaned up emergency alert listener.');
+    console.log('[SER Relay] Listener disconnected cleanly.');
   };
 }

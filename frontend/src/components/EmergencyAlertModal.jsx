@@ -128,18 +128,9 @@ export const EmergencyAlertModal = () => {
   useEffect(() => {
     getResponderLocation();
 
-    // Check if there is a very fresh SOS (< 90 seconds old) on mount, otherwise clear stale state
+    // Clean up any stale local storage from prior sessions on mount
     try {
-      const activeRaw = localStorage.getItem('ser_active_sos');
-      if (activeRaw) {
-        const parsed = JSON.parse(activeRaw);
-        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 90 * 1000)) {
-          setActiveAlert(parsed);
-        } else {
-          // Clear stale test alert from prior session
-          localStorage.removeItem('ser_active_sos');
-        }
-      }
+      localStorage.removeItem('ser_active_sos');
     } catch {}
 
     // Request desktop notification permission if not yet prompted
