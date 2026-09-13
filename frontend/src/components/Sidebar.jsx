@@ -15,10 +15,10 @@ import {
 import { useAuth } from '../context/AuthContext';
 
 export const Sidebar = ({ isOpen, setIsOpen }) => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isViewer } = useAuth();
 
-  const mainLinks = [
-    { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  const allMainLinks = [
+    { to: '/', label: 'Dashboard', icon: LayoutDashboard, adminOnly: true },
     { to: '/map', label: 'Live GPS Map', icon: MapPin },
     { to: '/detection', label: 'AI Detection', icon: ScanEye, badge: 'AI' },
     { to: '/units', label: 'Emergency Units', icon: Ambulance },
@@ -26,6 +26,8 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
     { to: '/reports', label: 'Reports', icon: BarChart3 },
     { to: '/citizen', label: 'Citizen SOS & Help', icon: Radio, badge: 'SOS' },
   ];
+
+  const mainLinks = allMainLinks.filter((item) => !(item.adminOnly && isViewer));
 
   const accountLinks = [
     { to: '/profile', label: 'My Profile', icon: UserCheck },

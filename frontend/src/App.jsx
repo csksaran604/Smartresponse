@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { EmergencyAlertModal } from './components/EmergencyAlertModal';
@@ -21,13 +21,26 @@ import { SettingsPage } from './pages/SettingsPage';
 
 import { LoginPage } from './pages/LoginPage';
 
-// Smart Navigation Resolver: Mobile visitors go directly to Citizen SOS, Desktop Admin goes to Dashboard
+// Smart Navigation Resolver: Mobile visitors go directly to Citizen SOS, Desktop Admin goes to Dashboard, Viewer to Map
 const EntryRedirect = () => {
+  const { isViewer } = useAuth();
   const isMobile = typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (isMobile) {
     return <Navigate to="/sos" replace />;
   }
+  if (isViewer) {
+    return <Navigate to="/map" replace />;
+  }
   return <Navigate to="/dashboard" replace />;
+};
+
+// Dashboard Route: Restricted to Admin/Operators. Viewers are redirected to Live GPS Map.
+const DashboardRoute = () => {
+  const { isViewer } = useAuth();
+  if (isViewer) {
+    return <Navigate to="/map" replace />;
+  }
+  return <DashboardPage />;
 };
 
 function App() {
@@ -50,8 +63,8 @@ function App() {
             {/* Operations Center - Restricted to Admin / Owner Device */}
             <Route element={<ProtectedRoute />}>
               <Route element={<DashboardLayout />}>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/" element={<DashboardRoute />} />
+                <Route path="/dashboard" element={<DashboardRoute />} />
                 <Route path="/portal" element={<CitizenPortalPage />} />
                 <Route path="/detection" element={<AccidentDetectionPage />} />
                 <Route path="/incidents" element={<Navigate to="/alerts" replace />} />
