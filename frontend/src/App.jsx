@@ -19,6 +19,8 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 
+import { LoginPage } from './pages/LoginPage';
+
 // Smart Navigation Resolver: Mobile visitors go directly to Citizen SOS, Desktop Admin goes to Dashboard
 const EntryRedirect = () => {
   const isMobile = typeof window !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -42,7 +44,7 @@ function App() {
             <Route path="/citizen" element={<PublicSosPage />} />
 
             {/* Auth / Entry Redirects */}
-            <Route path="/login" element={<EntryRedirect />} />
+            <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<EntryRedirect />} />
 
             {/* Operations Center - Restricted to Admin / Owner Device */}

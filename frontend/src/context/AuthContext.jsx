@@ -23,8 +23,27 @@ const DEFAULT_VIEWER = {
   is_active: true,
 };
 
+export const isMobileDevice = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+};
+
 function resolveAutoUser() {
   if (typeof window === 'undefined') return DEFAULT_VIEWER;
+
+  const isMobile = isMobileDevice();
+
+  // Mobile visitors / phones: STRICTLY VIEWER (Admin is never automatically granted on phones)
+  if (isMobile) {
+    try {
+      localStorage.removeItem('ser_owner_device');
+      const saved = localStorage.getItem('ser_user');
+      if (saved && (saved.includes('ADMIN') || saved.includes('OPERATOR'))) {
+        localStorage.removeItem('ser_user');
+      }
+    } catch {}
+    return DEFAULT_VIEWER;
+  }
 
   // 1. Localhost or 127.0.0.1 (Owner's Development Computer) -> ALWAYS ADMIN
   const host = window.location.hostname;
@@ -54,24 +73,15 @@ function resolveAutoUser() {
     }
   } catch {}
 
-  // 3. Check if this specific computer/browser is the owner's verified device
+  // 3. Check if this specific computer/browser is the owner's verified desktop device
   try {
     if (localStorage.getItem('ser_owner_device') === 'true') {
       return DEFAULT_ADMIN;
     }
   } catch {}
 
-  // 4. THIS COMPUTER: Desktop PC (where developer uses IDE, GitHub & Vercel) -> ALWAYS ADMIN!
-  const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  if (!isMobile) {
-    try {
-      localStorage.setItem('ser_owner_device', 'true');
-    } catch {}
-    return DEFAULT_ADMIN;
-  }
-
-  // 5. EVERY OTHER USER / MOBILE VISITOR -> STRICTLY VIEWER (Admin never granted)
-  return DEFAULT_VIEWER;
+  // 4. Desktop PC (where developer uses IDE, GitHub & Vercel) -> ADMIN
+  return DEFAULT_ADMIN;
 }
 
 export const AuthProvider = ({ children }) => {
@@ -105,18 +115,31 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
+    const isMobile = isMobileDevice();
     try {
       const res = await authApi.login({ username, password });
       const { token: receivedToken, user: receivedUser } = res.data;
+      
+      // On mobile phones, even if logging in, role must remain strictly VIEWER unless explicit desktop owner
+      const finalUser = isMobile ? { ...DEFAULT_VIEWER, username: receivedUser?.username || 'Viewer' } : receivedUser;
+
       setToken(receivedToken);
-      setUser(receivedUser);
+      setUser(finalUser);
       localStorage.setItem('ser_token', receivedToken);
-      localStorage.setItem('ser_user', JSON.stringify(receivedUser));
-      if (receivedUser?.role === 'ADMIN' || receivedUser?.role === 'EMERGENCY_OPERATOR') {
+      localStorage.setItem('ser_user', JSON.stringify(finalUser));
+      if (!isMobile && (receivedUser?.role === 'ADMIN' || receivedUser?.role === 'EMERGENCY_OPERATOR')) {
         localStorage.setItem('ser_owner_device', 'true');
+      } else {
+        localStorage.removeItem('ser_owner_device');
       }
-      return receivedUser;
+      return finalUser;
     } catch {
+      if (isMobile) {
+        setUser(DEFAULT_VIEWER);
+        localStorage.removeItem('ser_owner_device');
+        localStorage.setItem('ser_user', JSON.stringify(DEFAULT_VIEWER));
+        return DEFAULT_VIEWER;
+      }
       const adminUser = DEFAULT_ADMIN;
       setUser(adminUser);
       localStorage.setItem('ser_owner_device', 'true');
@@ -130,9 +153,9 @@ export const AuthProvider = ({ children }) => {
     return defaultUser;
   };
 
-  const isAdmin = user?.role === 'ADMIN';
-  const isOperator = user?.role === 'EMERGENCY_OPERATOR' || isAdmin;
-  const isViewer = user?.role === 'VIEWER';
+  const isAdmin = user?.role === 'ADMIN' && !isMobileDevice();
+  const isOperator = (user?.role === 'EMERGENCY_OPERATOR' || isAdmin) && !isMobileDevice();
+  const isViewer = !isAdmin && !isOperator;
 
   return (
     <AuthContext.Provider

@@ -16,12 +16,5 @@ export const ProtectedRoute = () => {
     );
   }
 
-  // Ensure owner flag is active for operator terminals
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem('ser_owner_device', 'true');
-    } catch {}
-  }
-
   return <Outlet />;
 };

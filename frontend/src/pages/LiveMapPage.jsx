@@ -210,6 +210,12 @@ export const LiveMapPage = () => {
   const [mapCenter, setMapCenter] = useState([13.0827, 80.2707]); // Default (Chennai, Tamil Nadu)
   const [mapZoom, setMapZoom] = useState(14);
   const watchIdRef = useRef(null);
+  const mapCenterRef = useRef(mapCenter);
+  const lastAutoRoutedKeyRef = useRef('');
+
+  useEffect(() => {
+    mapCenterRef.current = mapCenter;
+  }, [mapCenter]);
 
   // Quick SOS / Report Incident Modal State
   const [isSosModalOpen, setIsSosModalOpen] = useState(false);
@@ -278,24 +284,29 @@ export const LiveMapPage = () => {
           lng: longitude,
           accuracy: Math.round(accuracy),
           address,
-          heading,
-          speed,
+          heading: heading || null,
+          speed: speed ? Math.round(speed * 3.6) : null,
           timestamp: new Date(pos.timestamp),
         };
 
         setUserLocation(newLoc);
         setMapCenter([latitude, longitude]);
-        setMapZoom(15);
+        setMapZoom(16);
         setIsLocating(false);
       },
       (err) => {
-        console.warn('Geolocation error:', err);
+        console.warn('Location error:', err);
+        setGpsError('Could not acquire your precise GPS fix. Defaulting to Operations Center coordinates.');
         setIsLocating(false);
-        if (err.code === 1) {
-          setGpsError('Location access denied. Please click the lock icon in your browser URL bar and allow Location.');
-        } else {
-          setGpsError('Unable to detect GPS position. Please check internet and device location.');
-        }
+        setUserLocation({
+          lat: 13.0827,
+          lng: 80.2707,
+          accuracy: 50,
+          address: 'Chennai Central Operations Hub',
+          heading: null,
+          speed: null,
+          timestamp: new Date(),
+        });
       },
       {
         enableHighAccuracy: true,
@@ -338,8 +349,8 @@ export const LiveMapPage = () => {
 
   // Routing Function: Fetch OSRM Road Route from Responder to Destination
   const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene') => {
-    const startLat = userLocation?.lat || mapCenter[0];
-    const startLng = userLocation?.lng || mapCenter[1];
+    const startLat = userLocation?.lat || mapCenterRef.current[0];
+    const startLng = userLocation?.lng || mapCenterRef.current[1];
     setIsRouting(true);
 
     const directDist = calculateDistance(startLat, startLng, destLat, destLng);
@@ -385,7 +396,7 @@ export const LiveMapPage = () => {
     } finally {
       setIsRouting(false);
     }
-  }, [userLocation, mapCenter]);
+  }, [userLocation]);
 
   const focusLatParam = searchParams.get('focusLat');
   const focusLngParam = searchParams.get('focusLng');
@@ -451,7 +462,9 @@ export const LiveMapPage = () => {
     if (currentAccident?.latitude && currentAccident?.longitude) {
       const lat = Number(currentAccident.latitude);
       const lng = Number(currentAccident.longitude);
-      if (!isNaN(lat) && !isNaN(lng)) {
+      const routeKey = `${currentAccident.id || currentAccident.incident_id}_${lat.toFixed(4)}_${lng.toFixed(4)}`;
+      if (!isNaN(lat) && !isNaN(lng) && lastAutoRoutedKeyRef.current !== routeKey) {
+        lastAutoRoutedKeyRef.current = routeKey;
         calculateRouteTo(lat, lng, currentAccident.incident_id || 'Active Emergency Scene');
         if (focusLatParam) {
           setMapCenter([lat, lng]);

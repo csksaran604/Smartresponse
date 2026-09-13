@@ -133,6 +133,18 @@ export const LoginPage = () => {
                 <span>Access Operational Terminal</span>
               )}
             </button>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setLoading(true);
+                await login('viewer', 'viewer');
+                navigate('/');
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-750 text-sky-400 hover:text-sky-300 border border-slate-700 font-mono text-xs font-bold transition-colors flex items-center justify-center gap-2 mt-3"
+            >
+              <span>Login as Viewer (Live Telemetry Monitor)</span>
+            </button>
           </form>
 
           {/* Security Clearance Notice */}

@@ -64,7 +64,7 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
 export const EmergencyAlertModal = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isViewer } = useAuth();
   const [activeAlert, setActiveAlert] = useState(null);
   const [isMuted, setIsMuted] = useState(true);
   const activeAlertRef = useRef(null);
@@ -76,13 +76,12 @@ export const EmergencyAlertModal = () => {
   // Keep ref updated to current role without closure race conditions
   const isAdminRef = useRef(isAdmin);
   useEffect(() => {
-    const isOwner = (typeof window !== 'undefined' && (
+    const isOwner = !isViewer && ((typeof window !== 'undefined' && (
       localStorage.getItem('ser_owner_device') === 'true' ||
-      localStorage.getItem('ser_user')?.includes('ADMIN') ||
-      localStorage.getItem('ser_user')?.includes('OPERATOR')
-    )) || isAdmin;
+      localStorage.getItem('ser_user')?.includes('ADMIN')
+    )) || isAdmin);
     isAdminRef.current = Boolean(isOwner);
-  }, [isAdmin]);
+  }, [isAdmin, isViewer]);
 
   // Operator / Responder Live Location
   const [responderLocation, setResponderLocation] = useState(null);
@@ -181,12 +180,7 @@ export const EmergencyAlertModal = () => {
 
   // Check for freshly submitted reports / SOS sent while admin was logging in
   useEffect(() => {
-    const isOwner = (typeof window !== 'undefined' && (
-      localStorage.getItem('ser_owner_device') === 'true' ||
-      localStorage.getItem('ser_user')?.includes('ADMIN') ||
-      localStorage.getItem('ser_user')?.includes('OPERATOR')
-    )) || isAdmin;
-    if (!isOwner) return;
+    if (!isAdmin || isViewer) return;
 
     const checkForPendingAlerts = async () => {
       // If an alert is already active on admin screen, retain it
@@ -215,9 +209,9 @@ export const EmergencyAlertModal = () => {
     };
 
     checkForPendingAlerts();
-    const interval = setInterval(checkForPendingAlerts, 1500);
+    const interval = setInterval(checkForPendingAlerts, 2000);
     return () => clearInterval(interval);
-  }, [isAdmin, triggerEmergencyAlert]);
+  }, [isAdmin, isViewer, triggerEmergencyAlert]);
 
   useEffect(() => {
     getResponderLocation();
@@ -231,41 +225,9 @@ export const EmergencyAlertModal = () => {
 
     // Subscribe to incoming remote mobile SOS alerts
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
+      if (!isAdminRef.current) return;
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
       triggerEmergencyAlert(incomingAlert);
-
-      // Automatically register into backend/mock DB so it appears on the Live Map & Alerts Inbox
-      try {
-        if (incomingAlert.latitude && incomingAlert.longitude && !incomingAlert._registered) {
-          incomingAlert._registered = true;
-          const cleanAddr = cleanLocation(incomingAlert.address);
-          const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
-          const userPhone = incomingAlert.phone || cleanPhoneNumber('', incomingAlert.id);
-          const alertNotes = typeof incomingAlert.notes === 'string' ? incomingAlert.notes : '';
-          accidentsApi.createAccident({
-            id: incomingAlert.id,
-            incident_id: incomingAlert.id,
-            latitude: Number(incomingAlert.latitude),
-            longitude: Number(incomingAlert.longitude),
-            address: cleanAddr,
-            description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${alertNotes}`,
-            severity: 'Critical',
-            emergency_type: alertType,
-            type: alertType,
-            reporter: `Citizen (${userPhone})`,
-            phone: userPhone,
-            phone_number: userPhone,
-            reporter_phone: userPhone,
-            ai_confidence: 99.0,
-            verification_status: 'Verified',
-            photo: incomingAlert.photo || incomingAlert.photo_url || incomingAlert.thumbnail || null,
-            date_time: incomingAlert.timestamp || new Date().toISOString(),
-            created_at: incomingAlert.timestamp || new Date().toISOString(),
-          }).catch(() => {});
-        }
-      } catch (e) {
-        console.warn('Auto-register note:', e);
-      }
     });
 
     // Also listen to local ser_emergency_sos custom events
@@ -338,8 +300,16 @@ export const EmergencyAlertModal = () => {
     }
   };
 
-  // Render whenever there is an active alert (except citizen SOS page where submission confirmation is displayed)
-  if (!activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
+  // Auto-mute siren when user navigates to another page
+  useEffect(() => {
+    if (activeAlert) {
+      stopEmergencySiren();
+      setIsMuted(true);
+    }
+  }, [location.pathname]);
+
+  // Render whenever there is an active alert (except citizen SOS page or for viewer)
+  if (!isAdmin || isViewer || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
     return null;
   }
 

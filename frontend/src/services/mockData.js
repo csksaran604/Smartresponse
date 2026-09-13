@@ -708,6 +708,24 @@ export async function handleMockRequest(config) {
       });
     }
 
+    // Support Incident Telemetry Viewer Login
+    if (
+      (rawUsername === 'viewer' && (rawPassword === 'Viewer@123' || rawPassword === 'viewer' || rawPassword === '')) ||
+      rawUsername.includes('view') ||
+      rawUsername === 'user' ||
+      rawUsername === 'guest'
+    ) {
+      const user = DEMO_USERS.viewer;
+      const token = `ser-auth-jwt-viewer-${Date.now()}`;
+      mockDb.addLog('LOGIN', 'User', `Incident Viewer ${user.username} authenticated (Read-Only)`, user.username);
+
+      return mockResponse({
+        message: 'Authentication granted. Accessing Live Incident Telemetry Viewer.',
+        token,
+        user,
+      });
+    }
+
     // Reject all unauthorized access
     return Promise.reject({
       response: {
@@ -915,26 +933,27 @@ export async function handleMockRequest(config) {
     mockDb.saveNotifications(notifs);
     mockDb.addLog('CREATE', 'Accident', `Registered ticket ${newInc.incident_id} (${detectedType})`);
 
-    // Persist as active SOS and dispatch event
+    // Persist as active SOS if not already stored, but NEVER recursively re-dispatch ser_emergency_sos
     if (typeof window !== 'undefined') {
       try {
-        const emergencyPayload = {
-          id: targetId,
-          type: detectedType,
-          emergencyType: detectedType,
-          latitude: newInc.latitude,
-          longitude: newInc.longitude,
-          address: newInc.address,
-          notes: newInc.description,
-          phone: userPhone,
-          reporter_phone: userPhone,
-          photo: newInc.photo,
-          urgency: newInc.severity,
-          timestamp: newInc.created_at,
-          source: 'INCIDENT_REPORT',
-        };
-        localStorage.setItem('ser_active_sos', JSON.stringify(emergencyPayload));
-        window.dispatchEvent(new CustomEvent('ser_emergency_sos', { detail: emergencyPayload }));
+        if (!localStorage.getItem('ser_active_sos')) {
+          const emergencyPayload = {
+            id: targetId,
+            type: detectedType,
+            emergencyType: detectedType,
+            latitude: newInc.latitude,
+            longitude: newInc.longitude,
+            address: newInc.address,
+            notes: newInc.description,
+            phone: userPhone,
+            reporter_phone: userPhone,
+            photo: newInc.photo,
+            urgency: newInc.severity,
+            timestamp: newInc.created_at,
+            source: 'INCIDENT_REPORT',
+          };
+          localStorage.setItem('ser_active_sos', JSON.stringify(emergencyPayload));
+        }
       } catch {}
     }
 

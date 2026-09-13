@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Bell,
@@ -34,6 +34,7 @@ export const AlertsPage = () => {
   const [filterUnreadOnly, setFilterUnreadOnly] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
+  const processedAlertsRef = useRef(new Set());
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -70,13 +71,17 @@ export const AlertsPage = () => {
     // Helper to register incoming SOS into persistent database and local view
     const processIncomingAlert = (incomingAlert) => {
       if (!incomingAlert || !incomingAlert.id) return;
+      const strId = String(incomingAlert.id);
+      if (processedAlertsRef.current.has(strId)) return;
+      processedAlertsRef.current.add(strId);
+
       const cleanAddr = cleanLocation(incomingAlert.address);
       const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
       const userPhone = incomingAlert.phone || incomingAlert.reporter_phone || cleanPhoneNumber('', incomingAlert.id);
       const alertNotes = typeof incomingAlert.notes === 'string' ? incomingAlert.notes : '';
 
       setNotifications((prev) => {
-        if (prev.some((n) => String(n.id) === String(incomingAlert.id) || (incomingAlert.notes && n.message?.includes(incomingAlert.notes)))) {
+        if (prev.some((n) => String(n.id) === strId || (incomingAlert.notes && n.message?.includes(incomingAlert.notes)))) {
           return prev;
         }
         const newEntry = {
