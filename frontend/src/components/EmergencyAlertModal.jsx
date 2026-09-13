@@ -131,7 +131,7 @@ export const EmergencyAlertModal = () => {
     const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? String(incomingAlert.reporter_phone) : '') ||
                         (!isDummyPhoneNumber(incomingAlert.phone) ? String(incomingAlert.phone) : '');
     const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
-    const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || null;
+    const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || incomingAlert.thumbnail || null;
 
     const formattedAlert = {
       ...incomingAlert,
@@ -142,6 +142,7 @@ export const EmergencyAlertModal = () => {
       address: cleanAddr,
       notes: rawNotes,
       photo: remotePhoto,
+      thumbnail: incomingAlert.thumbnail || (remotePhoto && remotePhoto.length < 3000 ? remotePhoto : null),
     };
 
     setActiveAlert(formattedAlert);
@@ -214,7 +215,7 @@ export const EmergencyAlertModal = () => {
     };
 
     checkForPendingAlerts();
-    const interval = setInterval(checkForPendingAlerts, 3500);
+    const interval = setInterval(checkForPendingAlerts, 1500);
     return () => clearInterval(interval);
   }, [isAdmin, triggerEmergencyAlert]);
 
@@ -267,7 +268,7 @@ export const EmergencyAlertModal = () => {
             reporter_phone: userPhone,
             ai_confidence: 99.0,
             verification_status: 'Verified',
-            photo: incomingAlert.photo || null,
+            photo: incomingAlert.photo || incomingAlert.photo_url || incomingAlert.thumbnail || null,
             date_time: incomingAlert.timestamp || new Date().toISOString(),
             created_at: incomingAlert.timestamp || new Date().toISOString(),
           }).catch(() => {});
@@ -385,6 +386,7 @@ export const EmergencyAlertModal = () => {
   // Remote Citizen photo takes first priority with fallback to local cache
   const displayPhoto = activeAlert.photo ||
     activeAlert.photo_url ||
+    activeAlert.thumbnail ||
     (typeof window !== 'undefined' ? (
       localStorage.getItem(`ser_sos_photo_${activeAlert.id}`) ||
       localStorage.getItem('ser_user_uploaded_photo') ||
@@ -503,6 +505,11 @@ export const EmergencyAlertModal = () => {
                     src={displayPhoto}
                     alt="Accident scene camera proof"
                     className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
+                    onError={(e) => {
+                      if (activeAlert?.thumbnail && e.currentTarget.src !== activeAlert.thumbnail) {
+                        e.currentTarget.src = activeAlert.thumbnail;
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 flex flex-col justify-between p-2.5 pointer-events-none">
                     <div className="flex justify-end">

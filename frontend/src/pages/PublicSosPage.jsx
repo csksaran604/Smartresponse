@@ -111,6 +111,7 @@ export const PublicSosPage = () => {
   // Live Camera / Photo Capture State
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedPhoto, setCapturedPhoto] = useState(() => (typeof window !== 'undefined' ? (localStorage.getItem('ser_user_uploaded_photo') || null) : null));
+  const [capturedThumbnail, setCapturedThumbnail] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (front)
   const videoRef = useRef(null);
@@ -284,7 +285,9 @@ export const PublicSosPage = () => {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const rawDataUrl = canvas.toDataURL('image/jpeg', 0.85);
       const compressed = await compressImage(rawDataUrl, 640, 480, 0.65);
+      const thumb = await compressImage(rawDataUrl, 100, 75, 0.35);
       setCapturedPhoto(compressed);
+      setCapturedThumbnail(thumb);
       try {
         localStorage.setItem('ser_user_uploaded_photo', compressed);
         localStorage.setItem('ser_latest_sos_photo', compressed);
@@ -302,7 +305,9 @@ export const PublicSosPage = () => {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       const compressed = await compressImage(ev.target.result, 640, 480, 0.65);
+      const thumb = await compressImage(ev.target.result, 100, 75, 0.35);
       setCapturedPhoto(compressed);
+      setCapturedThumbnail(thumb);
       try {
         localStorage.setItem('ser_user_uploaded_photo', compressed);
         localStorage.setItem('ser_latest_sos_photo', compressed);
@@ -312,24 +317,9 @@ export const PublicSosPage = () => {
     reader.readAsDataURL(file);
   };
 
-  // Handle SOS Button Click
+  // Handle SOS Button Click - Instant Broadcast (0ms Delay)
   const handleSosPress = () => {
-    if (countdown !== null) {
-      setCountdown(null);
-      return;
-    }
-
-    setCountdown(3);
-    let current = 3;
-    const interval = setInterval(() => {
-      current -= 1;
-      setCountdown(current);
-      if (current <= 0) {
-        clearInterval(interval);
-        setCountdown(null);
-        transmitEmergencySos();
-      }
-    }, 1000);
+    transmitEmergencySos();
   };
 
   // Immediate Transmission
@@ -359,6 +349,7 @@ export const PublicSosPage = () => {
       phone: finalPhone,
       reporter_phone: finalPhone,
       photo: finalPhoto,
+      thumbnail: capturedThumbnail || (finalPhoto && finalPhoto.length < 3000 ? finalPhoto : null),
       urgency: 'Critical',
       timestamp: new Date().toISOString(),
     };

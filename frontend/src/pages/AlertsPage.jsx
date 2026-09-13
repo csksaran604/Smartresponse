@@ -89,7 +89,7 @@ export const AlertsPage = () => {
           latitude: Number(incomingAlert.latitude),
           longitude: Number(incomingAlert.longitude),
           address: cleanAddr,
-          photo: incomingAlert.photo || null,
+          photo: incomingAlert.photo || incomingAlert.photo_url || incomingAlert.thumbnail || null,
           reporter_phone: userPhone,
           phone: userPhone,
           created_at: incomingAlert.timestamp || new Date().toISOString(),
@@ -118,7 +118,7 @@ export const AlertsPage = () => {
             reporter_phone: userPhone,
             ai_confidence: 99.0,
             verification_status: 'Verified',
-            photo: incomingAlert.photo || null,
+            photo: incomingAlert.photo || incomingAlert.photo_url || incomingAlert.thumbnail || null,
             date_time: incomingAlert.timestamp || new Date().toISOString(),
             created_at: incomingAlert.timestamp || new Date().toISOString(),
           }).catch(() => {});
@@ -357,7 +357,7 @@ export const AlertsPage = () => {
             const lat = n.latitude != null ? Number(n.latitude) : (matchedInc?.latitude != null ? Number(matchedInc.latitude) : null);
             const lng = n.longitude != null ? Number(n.longitude) : (matchedInc?.longitude != null ? Number(matchedInc.longitude) : null);
             const address = cleanLocation(n.address || matchedInc?.address || (n.message ? n.message.split(' - ')[0] : ''));
-            const photo = n.photo || matchedInc?.photo || null;
+            const photo = n.photo || n.photo_url || n.thumbnail || matchedInc?.photo || matchedInc?.photo_url || matchedInc?.thumbnail || null;
 
             const citizenPhone = cleanPhoneNumber(
               matchedInc?.phone_number || matchedInc?.phone || (typeof matchedInc?.reporter === 'string' && matchedInc.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? matchedInc.reporter : '') || n.reporter_phone,
