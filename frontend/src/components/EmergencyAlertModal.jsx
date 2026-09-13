@@ -76,11 +76,7 @@ export const EmergencyAlertModal = () => {
   // Keep ref updated to current role without closure race conditions
   const isAdminRef = useRef(isAdmin);
   useEffect(() => {
-    const isOwner = !isViewer && ((typeof window !== 'undefined' && (
-      localStorage.getItem('ser_owner_device') === 'true' ||
-      localStorage.getItem('ser_user')?.includes('ADMIN')
-    )) || isAdmin);
-    isAdminRef.current = Boolean(isOwner);
+    isAdminRef.current = Boolean(isAdmin && !isViewer);
   }, [isAdmin, isViewer]);
 
   // Operator / Responder Live Location
@@ -300,11 +296,21 @@ export const EmergencyAlertModal = () => {
     }
   };
 
-  // Auto-mute siren when user navigates to another page
+  // Auto-dismiss modal and silence siren when user navigates to another page
+  const prevPathRef = useRef(location.pathname);
   useEffect(() => {
-    if (activeAlert) {
-      stopEmergencySiren();
-      setIsMuted(true);
+    if (prevPathRef.current !== location.pathname) {
+      prevPathRef.current = location.pathname;
+      if (activeAlertRef.current) {
+        stopEmergencySiren();
+        if (activeAlertRef.current?.id) {
+          markAlertDismissed(activeAlertRef.current.id);
+        }
+        activeAlertRef.current = null;
+        setActiveAlert(null);
+        setIsMuted(true);
+        setIsPhotoModalOpen(false);
+      }
     }
   }, [location.pathname]);
 

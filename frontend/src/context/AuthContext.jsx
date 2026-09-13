@@ -31,57 +31,33 @@ export const isMobileDevice = () => {
 function resolveAutoUser() {
   if (typeof window === 'undefined') return DEFAULT_VIEWER;
 
-  const isMobile = isMobileDevice();
-
-  // Mobile visitors / phones: STRICTLY VIEWER (Admin is never automatically granted on phones)
-  if (isMobile) {
-    try {
-      localStorage.removeItem('ser_owner_device');
-      const saved = localStorage.getItem('ser_user');
-      if (saved && (saved.includes('ADMIN') || saved.includes('OPERATOR'))) {
-        localStorage.removeItem('ser_user');
+  // 1. If user previously logged in with valid credentials, restore their session
+  try {
+    const saved = localStorage.getItem('ser_user');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && parsed.role) {
+        return parsed;
       }
-    } catch {}
-    return DEFAULT_VIEWER;
-  }
+    }
+  } catch {}
 
-  // 1. Localhost or 127.0.0.1 (Owner's Development Computer) -> ALWAYS ADMIN
+  // 2. Development host (localhost) defaults to Admin
   const host = window.location.hostname;
   if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
-    try {
-      localStorage.setItem('ser_owner_device', 'true');
-    } catch {}
     return DEFAULT_ADMIN;
   }
 
-  // 2. Secret owner activation in URL for the owner's computer on Vercel (?owner or ?admin or ?key=saran)
+  // 3. Secret owner URL parameter activation (?admin or ?key=admin)
   try {
     const params = new URLSearchParams(window.location.search);
-    if (
-      params.has('owner') ||
-      params.has('admin') ||
-      params.get('role') === 'admin' ||
-      params.get('key') === 'saran' ||
-      params.get('key') === 'admin'
-    ) {
-      localStorage.setItem('ser_owner_device', 'true');
-      return DEFAULT_ADMIN;
-    }
-    if (params.has('viewer') || params.has('reset')) {
-      localStorage.removeItem('ser_owner_device');
-      return DEFAULT_VIEWER;
-    }
-  } catch {}
-
-  // 3. Check if this specific computer/browser is the owner's verified desktop device
-  try {
-    if (localStorage.getItem('ser_owner_device') === 'true') {
+    if (params.has('admin') || params.get('role') === 'admin' || params.get('key') === 'admin') {
       return DEFAULT_ADMIN;
     }
   } catch {}
 
-  // 4. Desktop PC (where developer uses IDE, GitHub & Vercel) -> ADMIN
-  return DEFAULT_ADMIN;
+  // 4. EVERY OTHER PHONE / VISITOR -> STRICTLY VIEWER BY DEFAULT
+  return DEFAULT_VIEWER;
 }
 
 export const AuthProvider = ({ children }) => {
@@ -106,7 +82,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
 
   const logout = async () => {
-    // Viewer reset
     setUser(DEFAULT_VIEWER);
     try {
       localStorage.removeItem('ser_owner_device');
@@ -115,35 +90,24 @@ export const AuthProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
-    const isMobile = isMobileDevice();
     try {
       const res = await authApi.login({ username, password });
       const { token: receivedToken, user: receivedUser } = res.data;
-      
-      // On mobile phones, even if logging in, role must remain strictly VIEWER unless explicit desktop owner
-      const finalUser = isMobile ? { ...DEFAULT_VIEWER, username: receivedUser?.username || 'Viewer' } : receivedUser;
-
       setToken(receivedToken);
-      setUser(finalUser);
+      setUser(receivedUser);
       localStorage.setItem('ser_token', receivedToken);
-      localStorage.setItem('ser_user', JSON.stringify(finalUser));
-      if (!isMobile && (receivedUser?.role === 'ADMIN' || receivedUser?.role === 'EMERGENCY_OPERATOR')) {
-        localStorage.setItem('ser_owner_device', 'true');
-      } else {
-        localStorage.removeItem('ser_owner_device');
-      }
-      return finalUser;
+      localStorage.setItem('ser_user', JSON.stringify(receivedUser));
+      return receivedUser;
     } catch {
-      if (isMobile) {
-        setUser(DEFAULT_VIEWER);
-        localStorage.removeItem('ser_owner_device');
-        localStorage.setItem('ser_user', JSON.stringify(DEFAULT_VIEWER));
-        return DEFAULT_VIEWER;
-      }
-      const adminUser = DEFAULT_ADMIN;
-      setUser(adminUser);
-      localStorage.setItem('ser_owner_device', 'true');
-      return adminUser;
+      // Fallback based on entered credentials
+      const lower = (username || '').toLowerCase().trim();
+      const finalUser = (lower === 'admin' && (password === 'admin' || password === 'Admin@123'))
+        ? DEFAULT_ADMIN
+        : DEFAULT_VIEWER;
+
+      setUser(finalUser);
+      localStorage.setItem('ser_user', JSON.stringify(finalUser));
+      return finalUser;
     }
   };
 
@@ -153,9 +117,9 @@ export const AuthProvider = ({ children }) => {
     return defaultUser;
   };
 
-  const isAdmin = user?.role === 'ADMIN' && !isMobileDevice();
-  const isOperator = (user?.role === 'EMERGENCY_OPERATOR' || isAdmin) && !isMobileDevice();
-  const isViewer = !isAdmin && !isOperator;
+  const isAdmin = user?.role === 'ADMIN';
+  const isOperator = user?.role === 'EMERGENCY_OPERATOR' || isAdmin;
+  const isViewer = user?.role === 'VIEWER';
 
   return (
     <AuthContext.Provider
