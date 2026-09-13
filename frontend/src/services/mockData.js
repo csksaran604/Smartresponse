@@ -851,14 +851,19 @@ export async function handleMockRequest(config) {
     const userPhone = cleanPhoneNumber(body?.phone || body?.reporter_phone || body?.phone_number || (typeof body?.reporter === 'string' && body.reporter.match(/\+?\d[\d\-\s]{6,}/)?.[0] ? body.reporter : ''), Date.now());
     const photo = body?.photo || body?.photo_url || null;
     const reporterLabel = userPhone ? `Citizen (${userPhone})` : 'Citizen Direct';
+    const targetId = body?.id || body?.incident_id || Date.now();
+    const targetCode = body?.incident_id || (typeof body?.id === 'string' && body.id.startsWith('SOS-') ? body.id : `INC-2026-${String(incidents.length + 1).padStart(3, '0')}`);
+
+    // Check if incident already exists to prevent duplicate on repeated background sync
+    const existingIndex = incidents.findIndex(i => String(i.id) === String(targetId) || String(i.incident_id) === String(targetCode));
 
     const newInc = {
-      id: Date.now(),
-      incident_id: `INC-2026-${String(incidents.length + 1).padStart(3, '0')}`,
+      id: targetId,
+      incident_id: targetCode,
       date_time: body?.date_time || body?.timestamp || new Date().toISOString(),
       created_at: body?.created_at || body?.timestamp || new Date().toISOString(),
-      latitude: body?.latitude || 11.3410,
-      longitude: body?.longitude || 77.7172,
+      latitude: Number(body?.latitude || 11.3410),
+      longitude: Number(body?.longitude || 77.7172),
       address: cleanAddr,
       description: body?.description ? body.description.replace(/Live Tested [^\.]+\./gi, '').replace(/\+91-98765-TEST0/g, userPhone) : `[CITIZEN SOS] ${detectedType} emergency reported`,
       severity: body?.severity || 'Critical',
@@ -874,13 +879,18 @@ export async function handleMockRequest(config) {
       photo: photo,
     };
 
-    incidents.unshift(newInc);
+    if (existingIndex !== -1) {
+      incidents[existingIndex] = { ...incidents[existingIndex], ...newInc };
+    } else {
+      incidents.unshift(newInc);
+    }
     mockDb.saveIncidents(incidents);
 
-    // Add alert notification with clean message, correct type, photo, and phone
+    // Add or update alert notification with clean message, correct type, photo, and phone
     const notifs = mockDb.getNotifications();
-    notifs.unshift({
-      id: Date.now(),
+    const notifIndex = notifs.findIndex(n => String(n.id) === String(targetId) || String(n.incident_id) === String(targetId) || String(n.incident_code) === String(targetCode));
+    const notifItem = {
+      id: targetId,
       title: `CRITICAL: ${newInc.incident_id} Reported (${detectedType})`,
       message: `${newInc.address} - [CITIZEN SOS] ${detectedType} distress call. Contact: ${userPhone}. ${body?.notes || ''}`,
       type: detectedType,
@@ -894,16 +904,22 @@ export async function handleMockRequest(config) {
       photo: newInc.photo,
       reporter_phone: userPhone,
       phone: userPhone,
-      created_at: new Date().toISOString(),
-    });
-    mockDb.saveNotifications(notifs);
-    mockDb.addLog('CREATE', 'Accident', `Created ticket ${newInc.incident_id} (${detectedType})`);
+      created_at: newInc.created_at,
+    };
 
-    // Persist as active SOS and dispatch event so admin terminal receives alert even across login/reload
+    if (notifIndex !== -1) {
+      notifs[notifIndex] = { ...notifs[notifIndex], ...notifItem };
+    } else {
+      notifs.unshift(notifItem);
+    }
+    mockDb.saveNotifications(notifs);
+    mockDb.addLog('CREATE', 'Accident', `Registered ticket ${newInc.incident_id} (${detectedType})`);
+
+    // Persist as active SOS and dispatch event
     if (typeof window !== 'undefined') {
       try {
         const emergencyPayload = {
-          id: newInc.incident_id,
+          id: targetId,
           type: detectedType,
           emergencyType: detectedType,
           latitude: newInc.latitude,

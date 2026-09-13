@@ -76,7 +76,11 @@ export const EmergencyAlertModal = () => {
   // Keep ref updated to current role without closure race conditions
   const isAdminRef = useRef(isAdmin);
   useEffect(() => {
-    const isOwner = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+    const isOwner = (typeof window !== 'undefined' && (
+      localStorage.getItem('ser_owner_device') === 'true' ||
+      localStorage.getItem('ser_user')?.includes('ADMIN') ||
+      localStorage.getItem('ser_user')?.includes('OPERATOR')
+    )) || isAdmin;
     isAdminRef.current = Boolean(isOwner);
   }, [isAdmin]);
 
@@ -116,7 +120,7 @@ export const EmergencyAlertModal = () => {
       return;
     }
 
-    // If an alert is ALREADY displaying on admin screen, NEVER clear or interrupt it!
+    // If an alert is ALREADY displaying on admin screen, retain active alert
     if (activeAlertRef.current) {
       console.log('An alert is already active on screen, retaining active alert:', activeAlertRef.current.id);
       return;
@@ -126,8 +130,12 @@ export const EmergencyAlertModal = () => {
     const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
     const cleanAddr = cleanLocation(incomingAlert.address);
 
-    const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? incomingAlert.reporter_phone : '') ||
-                        (!isDummyPhoneNumber(incomingAlert.phone) ? incomingAlert.phone : '');
+    const rawNotes = typeof incomingAlert.notes === 'string'
+      ? incomingAlert.notes
+      : (incomingAlert.notes ? String(incomingAlert.notes) : '');
+
+    const remotePhone = (!isDummyPhoneNumber(incomingAlert.reporter_phone) ? String(incomingAlert.reporter_phone) : '') ||
+                        (!isDummyPhoneNumber(incomingAlert.phone) ? String(incomingAlert.phone) : '');
     const userPhone = remotePhone || cleanPhoneNumber('', incomingAlert.id);
     const remotePhoto = incomingAlert.photo || incomingAlert.photo_url || null;
 
@@ -138,6 +146,7 @@ export const EmergencyAlertModal = () => {
       type: alertType,
       emergencyType: alertType,
       address: cleanAddr,
+      notes: rawNotes,
       photo: remotePhoto,
     };
 
@@ -177,11 +186,15 @@ export const EmergencyAlertModal = () => {
 
   // Check for freshly submitted reports / SOS sent while admin was logging in
   useEffect(() => {
-    const isOwner = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdmin;
+    const isOwner = (typeof window !== 'undefined' && (
+      localStorage.getItem('ser_owner_device') === 'true' ||
+      localStorage.getItem('ser_user')?.includes('ADMIN') ||
+      localStorage.getItem('ser_user')?.includes('OPERATOR')
+    )) || isAdmin;
     if (!isOwner) return;
 
     const checkForPendingAlerts = async () => {
-      // If an alert is already active on admin screen, NEVER clear or interrupt it!
+      // If an alert is already active on admin screen, retain it
       if (activeAlertRef.current) return;
 
       // 1. Check local storage for undismissed emergency alert
@@ -196,7 +209,7 @@ export const EmergencyAlertModal = () => {
         }
       } catch {}
 
-      // 2. Check cloud ntfy relays for any citizen report sent right before admin login
+      // 2. Check cloud ntfy relays / REST object for any citizen report sent right before admin login
       try {
         const cloudAlert = await checkPendingCloudAlert();
         if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id)) {
@@ -207,7 +220,7 @@ export const EmergencyAlertModal = () => {
     };
 
     checkForPendingAlerts();
-    const interval = setInterval(checkForPendingAlerts, 4000);
+    const interval = setInterval(checkForPendingAlerts, 3500);
     return () => clearInterval(interval);
   }, [isAdmin, triggerEmergencyAlert]);
 
@@ -225,25 +238,32 @@ export const EmergencyAlertModal = () => {
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
 
-      const isOwnerAdmin = (typeof window !== 'undefined' && localStorage.getItem('ser_owner_device') === 'true') || isAdminRef.current;
+      const isOwnerAdmin = (typeof window !== 'undefined' && (
+        localStorage.getItem('ser_owner_device') === 'true' ||
+        localStorage.getItem('ser_user')?.includes('ADMIN') ||
+        localStorage.getItem('ser_user')?.includes('OPERATOR')
+      )) || isAdminRef.current;
       if (!isOwnerAdmin) {
         return;
       }
 
       triggerEmergencyAlert(incomingAlert);
 
-      // Automatically register into backend/mock DB so it appears on the Live Map
+      // Automatically register into backend/mock DB so it appears on the Live Map & Alerts Inbox
       try {
-        if (incomingAlert.latitude && incomingAlert.longitude && incomingAlert.source === 'PUBLIC_MOBILE_SOS' && !incomingAlert._registered) {
+        if (incomingAlert.latitude && incomingAlert.longitude && !incomingAlert._registered) {
           incomingAlert._registered = true;
           const cleanAddr = cleanLocation(incomingAlert.address);
           const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
           const userPhone = incomingAlert.phone || cleanPhoneNumber('', incomingAlert.id);
+          const alertNotes = typeof incomingAlert.notes === 'string' ? incomingAlert.notes : '';
           accidentsApi.createAccident({
-            latitude: incomingAlert.latitude,
-            longitude: incomingAlert.longitude,
+            id: incomingAlert.id,
+            incident_id: incomingAlert.id,
+            latitude: Number(incomingAlert.latitude),
+            longitude: Number(incomingAlert.longitude),
             address: cleanAddr,
-            description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${incomingAlert.notes || ''}`,
+            description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${alertNotes}`,
             severity: 'Critical',
             emergency_type: alertType,
             type: alertType,
@@ -336,6 +356,7 @@ export const EmergencyAlertModal = () => {
   const isOwnerAdmin = (typeof window !== 'undefined' && (
     localStorage.getItem('ser_owner_device') === 'true' ||
     localStorage.getItem('ser_user')?.includes('ADMIN') ||
+    localStorage.getItem('ser_user')?.includes('OPERATOR') ||
     isAdminRef.current ||
     isAdmin
   ));
@@ -610,7 +631,7 @@ export const EmergencyAlertModal = () => {
             </div>
 
             {/* 5. CITIZEN SITUATION NOTES (குறிப்புகள்) */}
-            {activeAlert.notes && activeAlert.notes !== activeAlert.address && (
+            {activeAlert.notes && String(activeAlert.notes).trim() !== '' && String(activeAlert.notes) !== String(activeAlert.address) && (
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
@@ -619,7 +640,7 @@ export const EmergencyAlertModal = () => {
                   </span>
                 </div>
                 <p className="text-xs font-semibold text-slate-100 leading-relaxed pl-1 whitespace-pre-wrap">
-                  "{activeAlert.notes}"
+                  "{String(activeAlert.notes)}"
                 </p>
               </div>
             )}

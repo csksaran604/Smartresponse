@@ -27,7 +27,7 @@ import {
   Bell
 } from 'lucide-react';
 import { accidentsApi, unitsApi } from '../services/api';
-import { broadcastEmergencySos } from '../services/realtimeEmergency';
+import { broadcastEmergencySos, subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { useAuth } from '../context/AuthContext';
 import { formatDateTime, formatTime } from '../utils/dateUtils';
@@ -460,6 +460,55 @@ export const LiveMapPage = () => {
       }
     }
   }, [currentAccident, calculateRouteTo, focusLatParam]);
+
+  // Live incoming emergency SOS listener for real-time dispatch map centering
+  useEffect(() => {
+    const handleIncomingSos = (alert) => {
+      if (!alert || !alert.latitude || !alert.longitude) return;
+      const lat = Number(alert.latitude);
+      const lng = Number(alert.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      const newInc = {
+        id: alert.id,
+        incident_id: alert.id,
+        latitude: lat,
+        longitude: lng,
+        address: alert.address || 'Citizen Emergency SOS Location',
+        severity: alert.urgency || 'Critical',
+        type: alert.type || alert.emergencyType || 'Medical',
+        emergency_type: alert.type || alert.emergencyType || 'Medical',
+        phone: alert.phone || alert.reporter_phone,
+        phone_number: alert.phone || alert.reporter_phone,
+        reporter: `Citizen (${alert.phone || 'Emergency'})`,
+        photo: alert.photo,
+        response_status: 'Active',
+        date_time: alert.timestamp || new Date().toISOString(),
+      };
+
+      setIncidents((prev) => {
+        if (prev.some((i) => String(i.id) === String(alert.id) || String(i.incident_id) === String(alert.id))) {
+          return prev;
+        }
+        return [newInc, ...prev];
+      });
+
+      setMapCenter([lat, lng]);
+      setMapZoom(16);
+      calculateRouteTo(lat, lng, alert.id);
+    };
+
+    const unsubscribe = subscribeToEmergencyAlerts(handleIncomingSos);
+    const handleCustomEvent = (e) => {
+      if (e.detail) handleIncomingSos(e.detail);
+    };
+    window.addEventListener('ser_emergency_sos', handleCustomEvent);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ser_emergency_sos', handleCustomEvent);
+    };
+  }, [calculateRouteTo]);
 
   // Spawn Demo Units Near User's Real Coordinates
   const spawnDemoUnitsNearMe = async () => {

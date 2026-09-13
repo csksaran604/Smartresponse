@@ -70,9 +70,9 @@ def get_accident_detail(id):
 
 
 @accidents_bp.route('', methods=['POST'])
-@jwt_required()
+@jwt_required(optional=True)
 def create_accident():
-    """Create a new accident record from AI detection or operator report."""
+    """Create a new accident record from AI detection, operator report, or citizen SOS."""
     user_id = get_jwt_identity()
     user = db.session.get(User, int(user_id)) if user_id else None
     data = request.get_json() or {}
@@ -82,15 +82,19 @@ def create_accident():
     longitude = data.get('longitude', -74.0060)
     address = data.get('address', '').strip()
     description = data.get('description', '').strip()
-    severity = data.get('severity', 'Medium')
-    ai_confidence = data.get('ai_confidence', 0.0)
-    reporter = data.get('reporter', user.full_name if user else 'Emergency Dispatcher')
+    severity = data.get('severity', 'Critical' if 'SOS' in str(data) else 'Medium')
+    ai_confidence = data.get('ai_confidence', 99.0 if 'SOS' in str(data) else 0.0)
+    reporter = data.get('reporter') or (user.full_name if user else 'Citizen Direct')
     photo = data.get('photo') or data.get('photo_url')
 
     if not address:
         address = f"Coordinates: {latitude:.4f}, {longitude:.4f}"
 
-    incident_code = f"INC-{datetime.now(timezone.utc).year}-{uuid.uuid4().hex[:6].upper()}"
+    custom_id = data.get('incident_id') or data.get('id')
+    if custom_id and str(custom_id).startswith(('SOS-', 'INC-')):
+        incident_code = str(custom_id)
+    else:
+        incident_code = f"INC-{datetime.now(timezone.utc).year}-{uuid.uuid4().hex[:6].upper()}"
 
     accident = Accident(
         incident_id=incident_code,

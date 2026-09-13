@@ -30,7 +30,7 @@ import { dashboardApi } from '../services/api';
 import { SeverityBadge } from '../components/SeverityBadge';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime } from '../utils/dateUtils';
-import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
+import { subscribeToEmergencyAlerts, isAlertDismissed, markAlertDismissed } from '../services/realtimeEmergency';
 
 const SEVERITY_COLORS = {
   Critical: '#ef4444',
@@ -52,7 +52,7 @@ export const DashboardPage = () => {
       const saved = localStorage.getItem('ser_active_sos');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.timestamp && (Date.now() - new Date(parsed.timestamp).getTime() < 10 * 60 * 1000)) {
+        if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
           return parsed;
         }
       }
@@ -64,12 +64,16 @@ export const DashboardPage = () => {
 
   useEffect(() => {
     const handleSos = (e) => {
-      if (e.detail) setActiveSos(e.detail);
+      if (e.detail && !isAlertDismissed(e.detail.id)) {
+        setActiveSos(e.detail);
+      }
     };
     window.addEventListener('ser_emergency_sos', handleSos);
 
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
-      if (incomingAlert) setActiveSos(incomingAlert);
+      if (incomingAlert && !isAlertDismissed(incomingAlert.id)) {
+        setActiveSos(incomingAlert);
+      }
     });
 
     return () => {
@@ -279,6 +283,9 @@ export const DashboardPage = () => {
             <button
               type="button"
               onClick={() => {
+                if (activeSos?.id) {
+                  markAlertDismissed(activeSos.id);
+                }
                 localStorage.removeItem('ser_active_sos');
                 setActiveSos(null);
               }}

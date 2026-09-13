@@ -67,52 +67,76 @@ export const AlertsPage = () => {
   useEffect(() => {
     fetchAlerts();
 
-    // Listen for live SOS broadcasts across all devices
-    const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
+    // Helper to register incoming SOS into persistent database and local view
+    const processIncomingAlert = (incomingAlert) => {
       if (!incomingAlert || !incomingAlert.id) return;
+      const cleanAddr = cleanLocation(incomingAlert.address);
+      const alertType = incomingAlert.emergencyType || incomingAlert.type || 'Medical';
+      const userPhone = incomingAlert.phone || incomingAlert.reporter_phone || cleanPhoneNumber('', incomingAlert.id);
+      const alertNotes = typeof incomingAlert.notes === 'string' ? incomingAlert.notes : '';
+
       setNotifications((prev) => {
-        if (prev.some((n) => n.id === incomingAlert.id || (incomingAlert.notes && n.message?.includes(incomingAlert.notes)))) {
+        if (prev.some((n) => String(n.id) === String(incomingAlert.id) || (incomingAlert.notes && n.message?.includes(incomingAlert.notes)))) {
           return prev;
         }
         const newEntry = {
           id: incomingAlert.id,
-          title: `CRITICAL: ${incomingAlert.id} Reported`,
-          message: `${incomingAlert.address} - [CITIZEN SOS] ${incomingAlert.type} distress call. Contact: ${incomingAlert.reporter_phone || 'Citizen'}. ${incomingAlert.notes || ''}`,
+          title: `CRITICAL: ${incomingAlert.id} Reported (${alertType})`,
+          message: `${cleanAddr} - [CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${alertNotes}`,
           severity: 'critical',
-          type: 'Critical',
+          type: alertType,
           is_read: false,
-          latitude: incomingAlert.latitude,
-          longitude: incomingAlert.longitude,
-          address: incomingAlert.address,
+          latitude: Number(incomingAlert.latitude),
+          longitude: Number(incomingAlert.longitude),
+          address: cleanAddr,
           photo: incomingAlert.photo || null,
+          reporter_phone: userPhone,
+          phone: userPhone,
           created_at: incomingAlert.timestamp || new Date().toISOString(),
         };
         return [newEntry, ...prev];
       });
       setUnreadCount((c) => c + 1);
+
+      // Persist into database so any filter/refresh/poll NEVER loses this alert
+      try {
+        if (!incomingAlert._dbSaved) {
+          incomingAlert._dbSaved = true;
+          accidentsApi.createAccident({
+            id: incomingAlert.id,
+            incident_id: incomingAlert.id,
+            latitude: Number(incomingAlert.latitude),
+            longitude: Number(incomingAlert.longitude),
+            address: cleanAddr,
+            description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${alertNotes}`,
+            severity: 'Critical',
+            emergency_type: alertType,
+            type: alertType,
+            reporter: `Citizen (${userPhone})`,
+            phone: userPhone,
+            phone_number: userPhone,
+            reporter_phone: userPhone,
+            ai_confidence: 99.0,
+            verification_status: 'Verified',
+            photo: incomingAlert.photo || null,
+            date_time: incomingAlert.timestamp || new Date().toISOString(),
+            created_at: incomingAlert.timestamp || new Date().toISOString(),
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Alert persistence error:', err);
+      }
+    };
+
+    // Listen for live SOS broadcasts across all devices
+    const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
+      processIncomingAlert(incomingAlert);
     });
 
     const handleCustomSos = (e) => {
-      const incomingAlert = e.detail;
-      if (!incomingAlert) return;
-      setNotifications((prev) => {
-        if (prev.some((n) => n.id === incomingAlert.id)) return prev;
-        const newEntry = {
-          id: incomingAlert.id,
-          title: `CRITICAL: ${incomingAlert.id} Reported`,
-          message: `${incomingAlert.address} - [CITIZEN SOS] ${incomingAlert.type} distress call. Contact: ${incomingAlert.reporter_phone || 'Citizen'}. ${incomingAlert.notes || ''}`,
-          severity: 'critical',
-          type: 'Critical',
-          is_read: false,
-          latitude: incomingAlert.latitude,
-          longitude: incomingAlert.longitude,
-          address: incomingAlert.address,
-          photo: incomingAlert.photo || null,
-          created_at: incomingAlert.timestamp || new Date().toISOString(),
-        };
-        return [newEntry, ...prev];
-      });
-      setUnreadCount((c) => c + 1);
+      if (e.detail) {
+        processIncomingAlert(e.detail);
+      }
     };
 
     window.addEventListener('ser_emergency_sos', handleCustomSos);

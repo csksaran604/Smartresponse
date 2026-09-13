@@ -70,8 +70,9 @@ api.interceptors.response.use(
     }
 
     if (error.response && error.response.status === 401) {
-      // Clear token if expired or unauthorized
-      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+      // Clear token if expired or unauthorized, but never disrupt anonymous citizen SOS screens
+      const p = window.location.pathname;
+      if (!p.includes('/login') && !p.includes('/register') && !p.includes('/sos') && !p.includes('/citizen')) {
         localStorage.removeItem('ser_token');
         localStorage.removeItem('ser_user');
         window.location.href = '/login';
