@@ -232,16 +232,6 @@ export const EmergencyAlertModal = () => {
     // Subscribe to incoming remote mobile SOS alerts
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {
       console.log('🚨 REAL-TIME SOS RECEIVED ON OPERATOR TERMINAL:', incomingAlert);
-
-      const isOwnerAdmin = (typeof window !== 'undefined' && (
-        localStorage.getItem('ser_owner_device') === 'true' ||
-        localStorage.getItem('ser_user')?.includes('ADMIN') ||
-        localStorage.getItem('ser_user')?.includes('OPERATOR')
-      )) || isAdminRef.current;
-      if (!isOwnerAdmin) {
-        return;
-      }
-
       triggerEmergencyAlert(incomingAlert);
 
       // Automatically register into backend/mock DB so it appears on the Live Map & Alerts Inbox
@@ -348,16 +338,8 @@ export const EmergencyAlertModal = () => {
     }
   };
 
-  const isOwnerAdmin = (typeof window !== 'undefined' && (
-    localStorage.getItem('ser_owner_device') === 'true' ||
-    localStorage.getItem('ser_user')?.includes('ADMIN') ||
-    localStorage.getItem('ser_user')?.includes('OPERATOR') ||
-    isAdminRef.current ||
-    isAdmin
-  ));
-
-  // Never render on citizen SOS page or for non-admin viewers
-  if (!isOwnerAdmin || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
+  // Render whenever there is an active alert (except citizen SOS page where submission confirmation is displayed)
+  if (!activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {
     return null;
   }
 

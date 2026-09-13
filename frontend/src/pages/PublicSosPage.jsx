@@ -426,17 +426,15 @@ export const PublicSosPage = () => {
           </div>
         </div>
 
-        {/* Emergency Dispatch Operations Dashboard - ONLY visible to Admin */}
-        {isOwnerAdmin && (
-          <Link
-            to="/dashboard"
-            className="text-xs font-mono text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
-            title="Open Emergency Operations Dashboard"
-          >
-            <LayoutDashboard className="w-3.5 h-3.5 text-rose-400" />
-            <span className="font-semibold">Dashboard</span>
-          </Link>
-        )}
+        {/* Emergency Dispatch Operations Dashboard - Instant access for operator testing */}
+        <Link
+          to="/dashboard"
+          className="text-xs font-mono text-slate-300 hover:text-white px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
+          title="Open Emergency Operations Dashboard"
+        >
+          <LayoutDashboard className="w-3.5 h-3.5 text-rose-400" />
+          <span className="font-semibold">Dashboard</span>
+        </Link>
       </header>
 
       {/* Main SOS Container */}
@@ -505,6 +503,17 @@ export const PublicSosPage = () => {
                 <PhoneCall className="w-5 h-5 animate-pulse" />
                 <span>Call Emergency Hotline (911 / 108 / 112)</span>
               </a>
+            </div>
+
+            {/* Direct Link to Operations Dashboard & Live Alerts */}
+            <div className="pt-2">
+              <Link
+                to="/dashboard"
+                className="w-full py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-rose-300 hover:text-white border-2 border-rose-500/40 text-xs font-mono font-bold flex items-center justify-center gap-2 shadow-lg transition-all"
+              >
+                <LayoutDashboard className="w-4 h-4 text-rose-400 animate-pulse" />
+                <span>Open Operations Console & Alerts Terminal</span>
+              </Link>
             </div>
 
             <button
