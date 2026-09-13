@@ -156,6 +156,40 @@ const getUserLocationIcon = () => {
   return cachedUserLocationIcon;
 };
 
+let cachedAmbulanceIcon = null;
+const getAmbulanceIcon = () => {
+  if (!cachedAmbulanceIcon) {
+    cachedAmbulanceIcon = L.divIcon({
+      className: 'ambulance-dispatch-pin',
+      html: `
+        <div style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(2, 132, 199, 0.45); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          <div style="
+            position: relative;
+            z-index: 10;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: #0284c7;
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 17px;
+          ">
+            🚑
+          </div>
+        </div>
+      `,
+      iconSize: [44, 44],
+      iconAnchor: [22, 22],
+      popupAnchor: [0, -22],
+    });
+  }
+  return cachedAmbulanceIcon;
+};
+
 const SEVERITY_PIN_COLORS = {
   Critical: '#ea4335', // Google Red
   High: '#fa7b17',     // Google Orange
@@ -379,12 +413,64 @@ export const LiveMapPage = () => {
     };
   }, [fetchData, locateUser]);
 
-  // Routing Function: Fetch High-Accuracy Driving Route from Responder/User to Destination
-  const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene', forcedStartLat = null, forcedStartLng = null) => {
-    const startLat = forcedStartLat ?? (userLocation?.lat || mapCenterRef.current[0]);
-    const startLng = forcedStartLng ?? (userLocation?.lng || mapCenterRef.current[1]);
-    setIsRouting(true);
+  // Find or position nearest active 108 Emergency Ambulance for this incident
+  const getDispatchUnit = useCallback((accidentLat, accidentLng) => {
+    if (!accidentLat || !accidentLng) {
+      return {
+        lat: 11.3530,
+        lng: 77.7310,
+        id: 'AMB-108-TN',
+        name: '108 Rapid Ambulance (TN-01-EMG-108)',
+        type: 'Ambulance',
+      };
+    }
+    // Check if an existing unit in units list is within 15 km
+    const nearby = units.find((u) => {
+      if (!u.latitude || !u.longitude) return false;
+      const d = parseFloat(calculateDistance(accidentLat, accidentLng, u.latitude, u.longitude));
+      return !isNaN(d) && d > 0.1 && d < 15;
+    });
+    if (nearby) {
+      return {
+        lat: Number(nearby.latitude),
+        lng: Number(nearby.longitude),
+        id: nearby.unit_id || 'AMB-108',
+        name: `${nearby.unit_id || '108 Ambulance'} (${nearby.type || 'Ambulance'})`,
+        type: nearby.type || 'Ambulance',
+      };
+    }
+    // Position local 108 Emergency Ambulance ~1.8 km along the road network from the incident
+    return {
+      lat: Number(accidentLat) + 0.012,
+      lng: Number(accidentLng) + 0.014,
+      id: 'AMB-108-TN',
+      name: '108 Rapid Ambulance (TN-01-EMG-108)',
+      type: 'Ambulance',
+    };
+  }, [units]);
 
+  // Routing Function: Fetch High-Accuracy Driving Route from Responder/Ambulance to Destination
+  const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene', forcedStartLat = null, forcedStartLng = null, forcedOriginLabel = null) => {
+    let startLat = forcedStartLat;
+    let startLng = forcedStartLng;
+    let originLabel = forcedOriginLabel;
+
+    if (startLat == null || startLng == null) {
+      const userDist = userLocation ? parseFloat(calculateDistance(userLocation.lat, userLocation.lng, destLat, destLng)) : null;
+      // If user is nearby (between 0.2 km and 25 km), route from user; otherwise route local 108 Ambulance!
+      if (userLocation && userDist != null && userDist >= 0.2 && userDist <= 25) {
+        startLat = userLocation.lat;
+        startLng = userLocation.lng;
+        originLabel = 'Your Responder GPS';
+      } else {
+        const amb = getDispatchUnit(destLat, destLng);
+        startLat = amb.lat;
+        startLng = amb.lng;
+        originLabel = amb.name;
+      }
+    }
+
+    setIsRouting(true);
     const directDist = calculateDistance(startLat, startLng, destLat, destLng);
     const directDuration = directDist ? Math.max(1, Math.round((parseFloat(directDist) / 35) * 60)) : 5;
 
@@ -450,6 +536,7 @@ export const LiveMapPage = () => {
     setActiveRoute({
       destination: [destLat, destLng],
       origin: [startLat, startLng],
+      originLabel: originLabel || '108 Rapid Ambulance',
       label: incidentLabel,
       distanceKm,
       durationMins,
@@ -462,13 +549,13 @@ export const LiveMapPage = () => {
     const numDist = parseFloat(distanceKm);
     if (!isNaN(numDist)) {
       if (numDist < 0.5) setMapZoom(17);
-      else if (numDist < 2.0) setMapZoom(16);
-      else if (numDist < 6.0) setMapZoom(15);
+      else if (numDist < 2.5) setMapZoom(16);
+      else if (numDist < 7.0) setMapZoom(15);
       else if (numDist < 15.0) setMapZoom(14);
       else setMapZoom(12);
     }
     setIsRouting(false);
-  }, [userLocation]);
+  }, [userLocation, getDispatchUnit]);
 
   const focusLatParam = searchParams.get('focusLat');
   const focusLngParam = searchParams.get('focusLng');
@@ -989,7 +1076,11 @@ export const LiveMapPage = () => {
 
               <div className="py-2 space-y-1 text-xs">
                 <div className="flex items-center justify-between font-mono">
-                  <span className="text-slate-400">Target:</span>
+                  <span className="text-slate-400">Dispatch Unit:</span>
+                  <span className="font-bold text-sky-300 truncate max-w-[170px]">{activeRoute.originLabel || '108 Rapid Ambulance'}</span>
+                </div>
+                <div className="flex items-center justify-between font-mono">
+                  <span className="text-slate-400">Incident Scene:</span>
                   <span className="font-bold text-white truncate max-w-[170px]">{activeRoute.label}</span>
                 </div>
                 <div className="flex items-center justify-between font-mono">
@@ -1099,6 +1190,29 @@ export const LiveMapPage = () => {
                   }}
                 />
               </>
+            )}
+
+            {/* Dispatched 108 Emergency Response Unit Marker (Ambulance) */}
+            {activeRoute && activeRoute.origin && (
+              <Marker
+                position={activeRoute.origin}
+                icon={getAmbulanceIcon()}
+              >
+                <Popup>
+                  <div className="space-y-1 font-sans p-1 text-xs min-w-[200px]">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1 font-mono">
+                      <span className="font-bold text-sky-400 flex items-center gap-1">
+                        🚑 {activeRoute.originLabel || '108 Rapid Ambulance'}
+                      </span>
+                    </div>
+                    <p className="text-slate-200">Dispatched &amp; Navigating to Incident Scene</p>
+                    <div className="text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800">
+                      <p className="text-sky-300 font-semibold">Road Distance: {activeRoute.distanceKm} km</p>
+                      <p className="text-amber-400 font-semibold">ETA: ~{activeRoute.durationMins} mins</p>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
             )}
 
             {/* User's Live GPS Location Marker (Google Style Blue Pin) & Accuracy Circle */}

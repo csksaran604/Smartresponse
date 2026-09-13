@@ -61,6 +61,30 @@ const haversineDistance = (lat1, lon1, lat2, lon2) => {
   return (R * c).toFixed(1);
 };
 
+const isSirenSilenced = (id) => {
+  if (!id || typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('ser_silenced_sirens');
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) && list.includes(String(id).trim());
+  } catch {
+    return false;
+  }
+};
+
+const markSirenSilenced = (id) => {
+  if (!id || typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem('ser_silenced_sirens');
+    const list = raw ? JSON.parse(raw) : [];
+    const strId = String(id).trim();
+    if (!list.includes(strId)) {
+      list.push(strId);
+      localStorage.setItem('ser_silenced_sirens', JSON.stringify(list.slice(-100)));
+    }
+  } catch {}
+};
+
 export const EmergencyAlertModal = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -184,12 +208,17 @@ export const EmergencyAlertModal = () => {
       }
     } catch {}
 
-    // Emergency Siren: Audible ONLY for Admin device
-    try {
-      enableSiren(true);
-      startEmergencySiren();
-      setIsMuted(false);
-    } catch {}
+    // Emergency Siren: Audible ONLY for Admin device and ONLY if not already silenced
+    const alreadySilenced = isSirenSilenced(incomingAlert.id);
+    if (!alreadySilenced) {
+      try {
+        enableSiren(true);
+        startEmergencySiren();
+        setIsMuted(false);
+      } catch {}
+    } else {
+      setIsMuted(true);
+    }
 
     // Desktop browser notification
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
@@ -202,30 +231,29 @@ export const EmergencyAlertModal = () => {
     }
   }, []);
 
-  // Check for freshly submitted reports / SOS sent while admin was logging in
+  // Check once on mount for freshly submitted reports / SOS sent while admin was logging in
   useEffect(() => {
     if (!isAdmin || isViewer) return;
 
     const checkForPendingAlerts = async () => {
-      // If an alert is already active on admin screen, retain it
       if (activeAlertRef.current) return;
 
-      // 1. Check local storage for undismissed emergency alert
+      // Check local storage for pending emergency alert
       try {
         const saved = localStorage.getItem('ser_active_sos');
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
+          if (parsed && parsed.id && !isAlertDismissed(parsed.id) && !isSirenSilenced(parsed.id)) {
             triggerEmergencyAlert(parsed);
             return;
           }
         }
       } catch {}
 
-      // 2. Check cloud ntfy relays / REST object for any citizen report sent right before admin login
+      // Check cloud relays for any citizen report sent right before admin login
       try {
         const cloudAlert = await checkPendingCloudAlert();
-        if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id)) {
+        if (cloudAlert && cloudAlert.id && !isAlertDismissed(cloudAlert.id) && !isSirenSilenced(cloudAlert.id)) {
           triggerEmergencyAlert(cloudAlert);
           return;
         }
@@ -233,8 +261,6 @@ export const EmergencyAlertModal = () => {
     };
 
     checkForPendingAlerts();
-    const interval = setInterval(checkForPendingAlerts, 2000);
-    return () => clearInterval(interval);
   }, [isAdmin, isViewer, triggerEmergencyAlert]);
 
   useEffect(() => {
@@ -287,7 +313,9 @@ export const EmergencyAlertModal = () => {
   // Manual Dismissal by Admin Click
   const handleDismiss = () => {
     stopEmergencySiren();
+    enableSiren(false);
     if (activeAlert?.id) {
+      markSirenSilenced(activeAlert.id);
       markAlertDismissed(activeAlert.id);
     }
     activeAlertRef.current = null;
@@ -303,18 +331,27 @@ export const EmergencyAlertModal = () => {
       setIsMuted(false);
     } else {
       stopEmergencySiren();
+      enableSiren(false);
+      if (activeAlert?.id) {
+        markSirenSilenced(activeAlert.id);
+      }
       setIsMuted(true);
     }
   };
 
   const handleViewOnLiveMap = () => {
     stopEmergencySiren();
+    enableSiren(false);
     const lat = activeAlert?.latitude;
     const lng = activeAlert?.longitude;
     const alertId = activeAlert?.id;
+    if (alertId) {
+      markSirenSilenced(alertId);
+    }
     activeAlertRef.current = null;
     setActiveAlert(null);
     setIsPhotoModalOpen(false);
+    setIsMuted(true);
     if (lat && lng) {
       navigate(`/map?focusLat=${lat}&focusLng=${lng}&incidentId=${encodeURIComponent(alertId || '')}&route=true`);
     } else {
@@ -322,21 +359,30 @@ export const EmergencyAlertModal = () => {
     }
   };
 
-  // Close modal popup and silence siren when user navigates to another page,
-  // but NEVER DELETE the active alert from system/map/alerts list
+  // Close modal popup and silence siren permanently when user navigates to another page
   const prevPathRef = useRef(location.pathname);
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {
       prevPathRef.current = location.pathname;
-      if (activeAlertRef.current) {
-        stopEmergencySiren();
-        activeAlertRef.current = null;
-        setActiveAlert(null);
-        setIsMuted(true);
-        setIsPhotoModalOpen(false);
+      stopEmergencySiren();
+      enableSiren(false);
+      if (activeAlertRef.current?.id) {
+        markSirenSilenced(activeAlertRef.current.id);
       }
+      activeAlertRef.current = null;
+      setActiveAlert(null);
+      setIsMuted(true);
+      setIsPhotoModalOpen(false);
     }
   }, [location.pathname]);
+
+  // Clean up on component unmount
+  useEffect(() => {
+    return () => {
+      stopEmergencySiren();
+      enableSiren(false);
+    };
+  }, []);
 
   // Render whenever there is an active alert (except citizen SOS page or for viewer)
   if (!isAdmin || isViewer || !activeAlert || location.pathname === '/sos' || location.pathname === '/citizen') {

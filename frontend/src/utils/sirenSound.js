@@ -94,26 +94,31 @@ export function startEmergencySiren() {
  * Stops the emergency siren alarm
  */
 export function stopEmergencySiren() {
-  if (!isSirenPlaying) return;
-
   try {
+    if (gainNode) {
+      try {
+        if (audioCtx) gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        gainNode.disconnect();
+      } catch {}
+      gainNode = null;
+    }
     if (oscillator) {
-      oscillator.stop();
-      oscillator.disconnect();
+      try { oscillator.stop(); } catch {}
+      try { oscillator.disconnect(); } catch {}
       oscillator = null;
     }
     if (lfo) {
-      lfo.stop();
-      lfo.disconnect();
+      try { lfo.stop(); } catch {}
+      try { lfo.disconnect(); } catch {}
       lfo = null;
     }
-    if (gainNode) {
-      gainNode.disconnect();
-      gainNode = null;
+    if (audioCtx && audioCtx.state === 'running') {
+      try { audioCtx.suspend().catch(() => {}); } catch {}
     }
-    isSirenPlaying = false;
   } catch (err) {
     console.warn('Error stopping emergency siren:', err);
+  } finally {
+    isSirenPlaying = false;
   }
 }
 
