@@ -62,13 +62,6 @@ export function markAlertDismissed(id) {
       dismissed.push(strId);
       localStorage.setItem('ser_dismissed_alerts', JSON.stringify(dismissed.slice(-100)));
     }
-    const active = localStorage.getItem('ser_active_sos');
-    if (active) {
-      const parsed = JSON.parse(active);
-      if (parsed?.id && String(parsed.id).trim() === strId) {
-        localStorage.removeItem('ser_active_sos');
-      }
-    }
   } catch {}
 }
 

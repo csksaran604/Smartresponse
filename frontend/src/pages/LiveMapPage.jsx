@@ -203,11 +203,35 @@ export const LiveMapPage = () => {
   // View mode: 'interactive' (Leaflet with Google Tiles) or 'nativeEmbed' (Official Google Maps Iframe)
   const [viewMode, setViewMode] = useState('interactive');
 
-  // User Live GPS Location State
-  const [userLocation, setUserLocation] = useState(null);
+  // User Live GPS Location State: initialize from cached GPS if available
+  const [userLocation, setUserLocation] = useState(() => {
+    try {
+      const lastLat = localStorage.getItem('ser_user_last_lat');
+      const lastLng = localStorage.getItem('ser_user_last_lng');
+      if (lastLat && lastLng) {
+        return {
+          lat: parseFloat(lastLat),
+          lng: parseFloat(lastLng),
+          accuracy: 20,
+          address: 'Live Responder Location',
+          timestamp: new Date(),
+        };
+      }
+    } catch {}
+    return null;
+  });
   const [gpsError, setGpsError] = useState(null);
   const [isLocating, setIsLocating] = useState(false);
-  const [mapCenter, setMapCenter] = useState([13.0827, 80.2707]); // Default (Chennai, Tamil Nadu)
+  const [mapCenter, setMapCenter] = useState(() => {
+    try {
+      const lastLat = localStorage.getItem('ser_user_last_lat');
+      const lastLng = localStorage.getItem('ser_user_last_lng');
+      if (lastLat && lastLng) {
+        return [parseFloat(lastLat), parseFloat(lastLng)];
+      }
+    } catch {}
+    return [11.3410, 77.7172];
+  });
   const [mapZoom, setMapZoom] = useState(14);
   const watchIdRef = useRef(null);
   const mapCenterRef = useRef(mapCenter);
@@ -290,19 +314,27 @@ export const LiveMapPage = () => {
         };
 
         setUserLocation(newLoc);
+        try {
+          localStorage.setItem('ser_user_last_lat', String(latitude));
+          localStorage.setItem('ser_user_last_lng', String(longitude));
+        } catch {}
         setMapCenter([latitude, longitude]);
         setMapZoom(16);
         setIsLocating(false);
       },
       (err) => {
         console.warn('Location error:', err);
-        setGpsError('Could not acquire your precise GPS fix. Defaulting to Operations Center coordinates.');
+        setGpsError('Could not acquire your precise GPS fix. Using emergency operations coordinates.');
         setIsLocating(false);
+        const cachedLat = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lat') : null;
+        const cachedLng = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lng') : null;
+        const fallbackLat = cachedLat ? parseFloat(cachedLat) : 11.3410;
+        const fallbackLng = cachedLng ? parseFloat(cachedLng) : 77.7172;
         setUserLocation({
-          lat: 13.0827,
-          lng: 80.2707,
+          lat: fallbackLat,
+          lng: fallbackLng,
           accuracy: 50,
-          address: 'Chennai Central Operations Hub',
+          address: 'Emergency Dispatch Hub',
           heading: null,
           speed: null,
           timestamp: new Date(),
@@ -347,55 +379,95 @@ export const LiveMapPage = () => {
     };
   }, [fetchData, locateUser]);
 
-  // Routing Function: Fetch OSRM Road Route from Responder to Destination
-  const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene') => {
-    const startLat = userLocation?.lat || mapCenterRef.current[0];
-    const startLng = userLocation?.lng || mapCenterRef.current[1];
+  // Routing Function: Fetch High-Accuracy Driving Route from Responder/User to Destination
+  const calculateRouteTo = useCallback(async (destLat, destLng, incidentLabel = 'Accident Scene', forcedStartLat = null, forcedStartLng = null) => {
+    const startLat = forcedStartLat ?? (userLocation?.lat || mapCenterRef.current[0]);
+    const startLng = forcedStartLng ?? (userLocation?.lng || mapCenterRef.current[1]);
     setIsRouting(true);
 
     const directDist = calculateDistance(startLat, startLng, destLat, destLng);
     const directDuration = directDist ? Math.max(1, Math.round((parseFloat(directDist) / 35) * 60)) : 5;
 
+    let routePositions = null;
+    let distanceKm = directDist;
+    let durationMins = directDuration;
+
+    // 1. Primary High-Precision Driving Route Engine (OSRM)
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
-      const res = await fetch(osrmUrl);
-      const data = await res.json();
-      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-        const route = data.routes[0];
-        const positions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-        setActiveRoute({
-          destination: [destLat, destLng],
-          origin: [startLat, startLng],
-          label: incidentLabel,
-          distanceKm: (route.distance / 1000).toFixed(1),
-          durationMins: Math.max(1, Math.round(route.duration / 60)),
-          positions,
-        });
-        setMapCenter([(startLat + destLat) / 2, (startLng + destLng) / 2]);
-        setMapZoom(14);
-      } else {
-        setActiveRoute({
-          destination: [destLat, destLng],
-          origin: [startLat, startLng],
-          label: incidentLabel,
-          distanceKm: directDist,
-          durationMins: directDuration,
-          positions: [[startLat, startLng], [destLat, destLng]],
-        });
+      const res = await fetch(osrmUrl, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          const route = data.routes[0];
+          routePositions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+          distanceKm = (route.distance / 1000).toFixed(1);
+          durationMins = Math.max(1, Math.round(route.duration / 60));
+        }
       }
     } catch (err) {
-      console.warn('Live map route error:', err);
-      setActiveRoute({
-        destination: [destLat, destLng],
-        origin: [startLat, startLng],
-        label: incidentLabel,
-        distanceKm: directDist,
-        durationMins: directDuration,
-        positions: [[startLat, startLng], [destLat, destLng]],
-      });
-    } finally {
-      setIsRouting(false);
+      console.warn('Primary route fetch error:', err);
     }
+
+    // 2. Secondary High-Precision Driving Route Engine (OpenStreetMap.de)
+    if (!routePositions || routePositions.length === 0) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+        const backupUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLng},${startLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+        const res = await fetch(backupUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            routePositions = route.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+            distanceKm = (route.distance / 1000).toFixed(1);
+            durationMins = Math.max(1, Math.round(route.duration / 60));
+          }
+        }
+      } catch (err) {
+        console.warn('Backup route fetch error:', err);
+      }
+    }
+
+    // 3. Fallback Smooth Interpolation if servers are temporarily unreachable
+    if (!routePositions || routePositions.length === 0) {
+      const steps = 6;
+      routePositions = [];
+      for (let i = 0; i <= steps; i++) {
+        const ratio = i / steps;
+        routePositions.push([
+          startLat + (destLat - startLat) * ratio,
+          startLng + (destLng - startLng) * ratio,
+        ]);
+      }
+    }
+
+    setActiveRoute({
+      destination: [destLat, destLng],
+      origin: [startLat, startLng],
+      label: incidentLabel,
+      distanceKm,
+      durationMins,
+      positions: routePositions,
+    });
+
+    const midLat = (startLat + destLat) / 2;
+    const midLng = (startLng + destLng) / 2;
+    setMapCenter([midLat, midLng]);
+    const numDist = parseFloat(distanceKm);
+    if (!isNaN(numDist)) {
+      if (numDist < 0.5) setMapZoom(17);
+      else if (numDist < 2.0) setMapZoom(16);
+      else if (numDist < 6.0) setMapZoom(15);
+      else if (numDist < 15.0) setMapZoom(14);
+      else setMapZoom(12);
+    }
+    setIsRouting(false);
   }, [userLocation]);
 
   const focusLatParam = searchParams.get('focusLat');
@@ -411,15 +483,23 @@ export const LiveMapPage = () => {
         (i) => Math.abs(i.latitude - fLat) < 0.005 && Math.abs(i.longitude - fLng) < 0.005
       );
       if (found) return found;
+      let sosData = {};
+      try {
+        const saved = localStorage.getItem('ser_active_sos');
+        if (saved) sosData = JSON.parse(saved) || {};
+      } catch {}
       return {
-        id: 'active-sos-target',
-        incident_id: 'SOS-LIVE-ALERT',
+        id: sosData.id || 'active-sos-target',
+        incident_id: sosData.id || 'SOS-LIVE-ALERT',
         latitude: fLat,
         longitude: fLng,
-        address: 'Citizen Emergency SOS Location',
-        severity: 'Critical',
+        address: sosData.address || 'Citizen Emergency SOS Location',
+        severity: sosData.urgency || sosData.severity || 'Critical',
+        type: sosData.type || sosData.emergencyType || 'Medical',
+        phone: sosData.phone || sosData.reporter_phone,
+        photo: sosData.photo,
         response_status: 'Active',
-        date_time: new Date().toISOString(),
+        date_time: sosData.timestamp || new Date().toISOString(),
       };
     }
 
@@ -457,22 +537,20 @@ export const LiveMapPage = () => {
     return null;
   }, [focusLatParam, focusLngParam, incidents]);
 
-  // Handle URL Query Params and Auto-route to current accident
+  // Handle URL Query Params and Auto-route to current accident with live GPS position
   useEffect(() => {
     if (currentAccident?.latitude && currentAccident?.longitude) {
       const lat = Number(currentAccident.latitude);
       const lng = Number(currentAccident.longitude);
-      const routeKey = `${currentAccident.id || currentAccident.incident_id}_${lat.toFixed(4)}_${lng.toFixed(4)}`;
+      const uLat = userLocation?.lat ? userLocation.lat.toFixed(4) : '';
+      const uLng = userLocation?.lng ? userLocation.lng.toFixed(4) : '';
+      const routeKey = `${currentAccident.id || currentAccident.incident_id}_${lat.toFixed(4)}_${lng.toFixed(4)}_from_${uLat}_${uLng}`;
       if (!isNaN(lat) && !isNaN(lng) && lastAutoRoutedKeyRef.current !== routeKey) {
         lastAutoRoutedKeyRef.current = routeKey;
         calculateRouteTo(lat, lng, currentAccident.incident_id || 'Active Emergency Scene');
-        if (focusLatParam) {
-          setMapCenter([lat, lng]);
-          setMapZoom(16);
-        }
       }
     }
-  }, [currentAccident, calculateRouteTo, focusLatParam]);
+  }, [currentAccident, calculateRouteTo, userLocation]);
 
   // Live incoming emergency SOS listener for real-time dispatch map centering
   useEffect(() => {
@@ -1002,15 +1080,25 @@ export const LiveMapPage = () => {
 
             {/* Active Navigation Route Polyline */}
             {activeRoute && activeRoute.positions && (
-              <Polyline
-                positions={activeRoute.positions}
-                pathOptions={{
-                  color: '#0284c7',
-                  weight: 6,
-                  opacity: 0.9,
-                  dashArray: isRouting ? '8, 8' : undefined,
-                }}
-              />
+              <>
+                <Polyline
+                  positions={activeRoute.positions}
+                  pathOptions={{
+                    color: '#0369a1',
+                    weight: 8,
+                    opacity: 0.5,
+                  }}
+                />
+                <Polyline
+                  positions={activeRoute.positions}
+                  pathOptions={{
+                    color: '#38bdf8',
+                    weight: 5,
+                    opacity: 0.95,
+                    dashArray: isRouting ? '8, 8' : undefined,
+                  }}
+                />
+              </>
             )}
 
             {/* User's Live GPS Location Marker (Google Style Blue Pin) & Accuracy Circle */}
@@ -1125,7 +1213,7 @@ export const LiveMapPage = () => {
                       </div>
 
                       <button
-                        onClick={() => calculateRouteTo(currentAccident.latitude, currentAccident.longitude, currentAccident.incident_id)}
+                        onClick={() => calculateRouteTo(Number(currentAccident.latitude), Number(currentAccident.longitude), currentAccident.incident_id, userLocation?.lat, userLocation?.lng)}
                         className="w-full py-1.5 px-2.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 text-[11px] font-bold font-mono flex items-center justify-center gap-1.5 transition-colors"
                       >
                         <Navigation className="w-3 h-3 text-sky-400" />

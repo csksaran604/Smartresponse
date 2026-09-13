@@ -56,8 +56,48 @@ export const AlertsPage = () => {
         if (a.incident_id) accMap[a.incident_id] = a;
       }
       setIncidentsMap(accMap);
-      setNotifications(notifs);
-      setUnreadCount(notifRes.data.unread_count || 0);
+
+      let allNotifs = [...notifs];
+      try {
+        const deletedIdsRaw = localStorage.getItem('ser_user_deleted_alert_ids');
+        const deletedIds = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+        allNotifs = allNotifs.filter((n) => !deletedIds.includes(String(n.id)));
+
+        // Ensure active citizen SOS is never lost or deleted without user confirmation
+        const savedSos = localStorage.getItem('ser_active_sos');
+        if (savedSos) {
+          const parsed = JSON.parse(savedSos);
+          if (parsed && parsed.id && !deletedIds.includes(String(parsed.id))) {
+            const strId = String(parsed.id);
+            const exists = allNotifs.some(
+              (n) => String(n.id) === strId || String(n.incident_code) === strId || String(n.incident_id) === strId
+            );
+            if (!exists) {
+              const cleanAddr = cleanLocation(parsed.address);
+              const alertType = parsed.emergencyType || parsed.type || 'Medical';
+              const userPhone = parsed.phone || parsed.reporter_phone || cleanPhoneNumber('', parsed.id);
+              allNotifs.unshift({
+                id: parsed.id,
+                title: `CRITICAL: ${parsed.id} Reported (${alertType})`,
+                message: `${cleanAddr} - [CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${parsed.notes || ''}`,
+                severity: 'critical',
+                type: alertType,
+                is_read: false,
+                latitude: Number(parsed.latitude),
+                longitude: Number(parsed.longitude),
+                address: cleanAddr,
+                photo: parsed.photo || parsed.photo_url || parsed.thumbnail || null,
+                reporter_phone: userPhone,
+                phone: userPhone,
+                created_at: parsed.timestamp || new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch {}
+
+      setNotifications(allNotifs);
+      setUnreadCount(allNotifs.filter((n) => !n.is_read).length);
     } catch (e) {
       console.error(e);
     } finally {
@@ -177,20 +217,49 @@ export const AlertsPage = () => {
   const handleDeleteAlert = async (idOrNotif) => {
     const id = typeof idOrNotif === 'object' ? idOrNotif.id : idOrNotif;
     try {
+      const deletedIdsRaw = localStorage.getItem('ser_user_deleted_alert_ids');
+      const deletedIds = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+      if (!deletedIds.includes(String(id))) {
+        deletedIds.push(String(id));
+        localStorage.setItem('ser_user_deleted_alert_ids', JSON.stringify(deletedIds));
+      }
+      const active = localStorage.getItem('ser_active_sos');
+      if (active) {
+        const parsed = JSON.parse(active);
+        if (String(parsed?.id) === String(id)) {
+          localStorage.removeItem('ser_active_sos');
+        }
+      }
       await notificationsApi.deleteNotification(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setSelectedIds((prev) => prev.filter((item) => item !== id));
-      setUnreadCount((c) => Math.max(0, c - 1));
     } catch (e) {
       console.error('Delete alert error:', e);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-      setSelectedIds((prev) => prev.filter((item) => item !== id));
+    } finally {
+      setNotifications((prev) => prev.filter((n) => String(n.id) !== String(id)));
+      setSelectedIds((prev) => prev.filter((item) => String(item) !== String(id)));
+      setUnreadCount((c) => Math.max(0, c - 1));
     }
   };
 
   const handleDeleteSelected = async () => {
     if (selectedIds.length === 0) return;
     if (!window.confirm(`Delete ${selectedIds.length} selected notification(s)? Incident records in Reports will remain safely preserved.`)) return;
+
+    try {
+      const deletedIdsRaw = localStorage.getItem('ser_user_deleted_alert_ids');
+      const deletedIds = deletedIdsRaw ? JSON.parse(deletedIdsRaw) : [];
+      selectedIds.forEach((id) => {
+        if (!deletedIds.includes(String(id))) deletedIds.push(String(id));
+      });
+      localStorage.setItem('ser_user_deleted_alert_ids', JSON.stringify(deletedIds));
+
+      const active = localStorage.getItem('ser_active_sos');
+      if (active) {
+        const parsed = JSON.parse(active);
+        if (selectedIds.includes(parsed?.id)) {
+          localStorage.removeItem('ser_active_sos');
+        }
+      }
+    } catch {}
 
     for (const id of selectedIds) {
       try {

@@ -94,15 +94,29 @@ export const EmergencyAlertModal = () => {
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
           });
+          try {
+            localStorage.setItem('ser_user_last_lat', String(pos.coords.latitude));
+            localStorage.setItem('ser_user_last_lng', String(pos.coords.longitude));
+          } catch {}
         },
         (err) => {
           console.warn('Operator GPS note:', err);
-          setResponderLocation({ lat: 13.0827, lng: 80.2707 });
+          const cachedLat = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lat') : null;
+          const cachedLng = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lng') : null;
+          setResponderLocation({
+            lat: cachedLat ? parseFloat(cachedLat) : 11.3410,
+            lng: cachedLng ? parseFloat(cachedLng) : 77.7172,
+          });
         },
         { enableHighAccuracy: true, timeout: 8000 }
       );
     } else {
-      setResponderLocation({ lat: 13.0827, lng: 80.2707 });
+      const cachedLat = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lat') : null;
+      const cachedLng = typeof window !== 'undefined' ? localStorage.getItem('ser_user_last_lng') : null;
+      setResponderLocation({
+        lat: cachedLat ? parseFloat(cachedLat) : 11.3410,
+        lng: cachedLng ? parseFloat(cachedLng) : 77.7172,
+      });
     }
   }, []);
 
@@ -143,6 +157,33 @@ export const EmergencyAlertModal = () => {
     setActiveAlert(formattedAlert);
     activeAlertRef.current = formattedAlert;
 
+    // Persist alert immediately to backend/database so it is NEVER lost or deleted on navigation
+    try {
+      if (!incomingAlert._dbSaved) {
+        incomingAlert._dbSaved = true;
+        accidentsApi.createAccident({
+          id: incomingAlert.id,
+          incident_id: incomingAlert.id,
+          latitude: Number(incomingAlert.latitude),
+          longitude: Number(incomingAlert.longitude),
+          address: cleanAddr,
+          description: `[CITIZEN SOS] ${alertType} distress call. Contact: ${userPhone}. ${rawNotes}`,
+          severity: 'Critical',
+          emergency_type: alertType,
+          type: alertType,
+          reporter: `Citizen (${userPhone})`,
+          phone: userPhone,
+          phone_number: userPhone,
+          reporter_phone: userPhone,
+          ai_confidence: 99.0,
+          verification_status: 'Verified',
+          photo: remotePhoto,
+          date_time: incomingAlert.timestamp || new Date().toISOString(),
+          created_at: incomingAlert.timestamp || new Date().toISOString(),
+        }).catch(() => {});
+      }
+    } catch {}
+
     // Emergency Siren: Audible ONLY for Admin device
     try {
       enableSiren(true);
@@ -159,19 +200,6 @@ export const EmergencyAlertModal = () => {
         });
       } catch {}
     }
-  }, []);
-
-  // Clean up any dismissed active alerts on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('ser_active_sos');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (isAlertDismissed(parsed?.id)) {
-          localStorage.removeItem('ser_active_sos');
-        }
-      }
-    } catch {}
   }, []);
 
   // Check for freshly submitted reports / SOS sent while admin was logging in
@@ -281,31 +309,27 @@ export const EmergencyAlertModal = () => {
 
   const handleViewOnLiveMap = () => {
     stopEmergencySiren();
-    if (activeAlert?.id) {
-      markAlertDismissed(activeAlert.id);
-    }
     const lat = activeAlert?.latitude;
     const lng = activeAlert?.longitude;
+    const alertId = activeAlert?.id;
     activeAlertRef.current = null;
     setActiveAlert(null);
     setIsPhotoModalOpen(false);
     if (lat && lng) {
-      navigate(`/map?focusLat=${lat}&focusLng=${lng}&route=true`);
+      navigate(`/map?focusLat=${lat}&focusLng=${lng}&incidentId=${encodeURIComponent(alertId || '')}&route=true`);
     } else {
       navigate('/map');
     }
   };
 
-  // Auto-dismiss modal and silence siren when user navigates to another page
+  // Close modal popup and silence siren when user navigates to another page,
+  // but NEVER DELETE the active alert from system/map/alerts list
   const prevPathRef = useRef(location.pathname);
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {
       prevPathRef.current = location.pathname;
       if (activeAlertRef.current) {
         stopEmergencySiren();
-        if (activeAlertRef.current?.id) {
-          markAlertDismissed(activeAlertRef.current.id);
-        }
         activeAlertRef.current = null;
         setActiveAlert(null);
         setIsMuted(true);
