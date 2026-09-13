@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { notificationsApi, accidentsApi } from '../services/api';
 import { formatDateTime } from '../utils/dateUtils';
-import { subscribeToEmergencyAlerts } from '../services/realtimeEmergency';
+import { subscribeToEmergencyAlerts, fetchAllOfflineCloudAlerts } from '../services/realtimeEmergency';
 import { cleanLocation, cleanPhoneNumber, SAMPLE_ACCIDENT_PHOTO } from '../services/mockData';
 
 export const AlertsPage = () => {
@@ -132,6 +132,15 @@ export const AlertsPage = () => {
         console.warn('Alert persistence error:', err);
       }
     };
+
+    // Fetch and display alerts that were sent while admin was offline or not logged in
+    fetchAllOfflineCloudAlerts().then((offlineList) => {
+      if (Array.isArray(offlineList)) {
+        offlineList.forEach((alert) => {
+          processIncomingAlert(alert);
+        });
+      }
+    }).catch(() => {});
 
     // Listen for live SOS broadcasts across all devices
     const unsubscribe = subscribeToEmergencyAlerts((incomingAlert) => {

@@ -240,16 +240,16 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. INSTANT CLOUD BROADCAST VIA MQTT WEBSOCKET (<20ms, zero rate-limit!)
+  // 2. INSTANT CLOUD BROADCAST VIA MQTT WEBSOCKET (with retain flag so offline terminals receive it)
   try {
     if (!mqttClient) {
       initMqtt();
     }
     const sendMqtt = () => {
       if (mqttClient) {
-        mqttClient.publish(MQTT_TOPIC, JSON.stringify(payload), { qos: 1 }, (err) => {
+        mqttClient.publish(MQTT_TOPIC, JSON.stringify(payload), { qos: 1, retain: true }, (err) => {
           if (!err) {
-            console.log('[SER Relay] 🚀 Live SOS delivered via high-speed MQTT WebSocket!');
+            console.log('[SER Relay] 🚀 Live SOS delivered via high-speed MQTT WebSocket (Retained)!');
           }
         });
       }
@@ -266,7 +266,7 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('[SER Relay] MQTT publish note:', err);
   }
 
-  // 3. Fallback broadcast to secondary broker
+  // 3. Fallback broadcast to secondary broker (with retain)
   try {
     const backupClient = mqtt.connect(MQTT_BACKUP_BROKER, {
       clientId: 'ser_b_' + Math.random().toString(16).slice(2, 8),
@@ -274,20 +274,66 @@ export async function broadcastEmergencySos(alertData) {
       connectTimeout: 3000,
     });
     backupClient.on('connect', () => {
-      backupClient.publish(MQTT_TOPIC, JSON.stringify(payload), { qos: 1 }, () => {
+      backupClient.publish(MQTT_TOPIC, JSON.stringify(payload), { qos: 1, retain: true }, () => {
         try { backupClient.end(); } catch {}
       });
     });
+  } catch (e) {}
+
+  // 4. PERSISTENT CLOUD BUFFER (stores messages for 24h so admin receives them even if offline during SOS)
+  try {
+    fetch('https://ntfy.sh/ser_smartresponse_sos_relay_channel', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {
+        'Title': `🚨 EMERGENCY SOS: ${selectedType}`,
+        'Priority': 'urgent',
+        'Tags': 'rotating_light,sos',
+      },
+    }).catch(() => {});
   } catch (e) {}
 
   return payload;
 }
 
 /**
- * Checks pending undismissed emergency alert from active cache
+ * Fetches all undismissed emergency alerts stored in persistent cloud buffer
+ */
+export async function fetchAllOfflineCloudAlerts() {
+  const results = [];
+  try {
+    const res = await fetch('https://ntfy.sh/ser_smartresponse_sos_relay_channel/json?poll=1&since=24h', {
+      headers: { 'Accept': 'application/x-ndjson, application/json' },
+    });
+    if (res.ok) {
+      const text = await res.text();
+      const lines = text.trim().split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const item = JSON.parse(line);
+          if (item.event === 'message' && item.message) {
+            const rawAlert = typeof item.message === 'string' ? JSON.parse(item.message) : item.message;
+            const parsed = parseRawMessage(rawAlert);
+            if (parsed && parsed.id && !isAlertDismissed(parsed.id)) {
+              results.push(parsed);
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[SER Relay] Cloud offline buffer fetch notice:', e);
+  }
+  return results;
+}
+
+/**
+ * Checks pending undismissed emergency alert from local active cache or cloud offline queue
  */
 export async function checkPendingCloudAlert() {
   if (typeof window === 'undefined') return null;
+
+  // 1. Check local device cache
   try {
     const saved = localStorage.getItem('ser_active_sos');
     if (saved) {
@@ -297,6 +343,16 @@ export async function checkPendingCloudAlert() {
       }
     }
   } catch {}
+
+  // 2. Check cloud offline queue for any SOS sent while admin was offline or not logged in
+  try {
+    const offlineAlerts = await fetchAllOfflineCloudAlerts();
+    if (offlineAlerts && offlineAlerts.length > 0) {
+      // Return the latest undismissed alert
+      return offlineAlerts[offlineAlerts.length - 1];
+    }
+  } catch {}
+
   return null;
 }
 
