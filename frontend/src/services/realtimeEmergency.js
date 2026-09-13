@@ -1,18 +1,14 @@
 /**
  * Real-Time Emergency SOS Cloud Relay & Sync Service
  * Connects citizen mobile devices directly with the Admin Dispatch Terminal
- * using high-reliability REST cloud sync + dual-relay SSE pub/sub + BroadcastChannel.
+ * using high-reliability dual-relay SSE pub/sub + BroadcastChannel + Rapid Polling.
  */
 
 import { cleanPhoneNumber, cleanLocation, isDummyPhoneNumber } from './mockData';
 
 export const EMERGENCY_TOPIC = 'ser_emergency_live_v5';
 
-// Fast high-availability REST cloud object ID for instant cross-device synchronization
-const REST_CLOUD_OBJECT_ID = 'ff808181a067127101a094ee8d8d008b';
-const REST_SYNC_URL = `https://api.restful-api.dev/objects/${REST_CLOUD_OBJECT_ID}`;
-
-// Redundant pub/sub relays (prioritizing responsive host)
+// Primary high-speed pub/sub broker
 export const RELAY_HOSTS = [
   'https://ntfy.sh',
   'https://ntfy.envs.net',
@@ -80,34 +76,14 @@ export function markAlertDismissed(id) {
 }
 
 /**
- * Checks cloud relays & REST object for the latest undismissed emergency message
+ * Checks cloud relays for the latest undismissed emergency message
  */
 export async function checkPendingCloudAlert() {
-  // 1. Check REST Cloud Object (fastest & most reliable cross-device sync)
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
-    const res = await fetch(REST_SYNC_URL, { signal: controller.signal });
-    clearTimeout(timer);
-    if (res.ok) {
-      const json = await res.json();
-      const alert = parseRawMessage(json?.data || json);
-      if (alert && alert.id && !isAlertDismissed(alert.id)) {
-        const timeStr = alert.timestamp || alert.created_at || '';
-        const ageMs = timeStr ? Date.now() - new Date(timeStr).getTime() : 0;
-        if (isNaN(ageMs) || ageMs < 4 * 60 * 60 * 1000) {
-          return alert;
-        }
-      }
-    }
-  } catch {}
-
-  // 2. Check Pub/Sub Relays
   for (const host of RELAY_HOSTS) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=30m`, {
+      const timer = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(`${host}/${EMERGENCY_TOPIC}/json?poll=1&since=15m`, {
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -131,8 +107,7 @@ export async function checkPendingCloudAlert() {
 }
 
 /**
- * Uploads citizen captured photo to cloud relay file hosting
- * and returns direct public image URL
+ * Uploads citizen captured photo in background to avoid blocking the emergency dispatch
  */
 export async function uploadPhotoToCloud(photo) {
   if (!photo) return null;
@@ -157,41 +132,33 @@ export async function uploadPhotoToCloud(photo) {
 
     if (!blob) return null;
 
-    // Try redundant cloud relays
-    for (const host of RELAY_HOSTS) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 3500);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}_uploads`, {
+      method: 'PUT',
+      headers: {
+        Filename: `sos_${Date.now()}.jpg`,
+        Title: 'Citizen SOS Accident Photo',
+      },
+      body: blob,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
 
-        const res = await fetch(`${host}/${EMERGENCY_TOPIC}_uploads`, {
-          method: 'PUT',
-          headers: {
-            Filename: `sos_${Date.now()}.jpg`,
-            Title: 'Citizen SOS Accident Photo',
-          },
-          body: blob,
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.attachment?.url) {
-            return data.attachment.url;
-          }
-        }
-      } catch (e) {
-        // Continue to fallback
+    if (res.ok) {
+      const data = await res.json();
+      if (data.attachment?.url) {
+        return data.attachment.url;
       }
     }
   } catch (err) {
-    console.warn('Photo cloud relay upload error:', err);
+    // Non-blocking
   }
   return null;
 }
 
 /**
- * Broadcasts an SOS alert from mobile phone to all listening Admin terminals
+ * Broadcasts an SOS alert immediately to all listening Admin terminals
  */
 export async function broadcastEmergencySos(alertData) {
   const rawPhoto = alertData.photo || alertData.photo_url || null;
@@ -208,14 +175,6 @@ export async function broadcastEmergencySos(alertData) {
     }
   }
 
-  // Upload photo to cloud file relay to get a small public URL
-  let photoUrl = null;
-  if (rawPhoto) {
-    try {
-      photoUrl = await uploadPhotoToCloud(rawPhoto);
-    } catch {}
-  }
-
   const storedPhone = typeof window !== 'undefined' ? (localStorage.getItem('ser_user_phone') || '') : '';
   const rawUserPhone = (!isDummyPhoneNumber(alertData.phone) ? alertData.phone : '') ||
                        (!isDummyPhoneNumber(alertData.reporter_phone) ? alertData.reporter_phone : '') ||
@@ -228,6 +187,9 @@ export async function broadcastEmergencySos(alertData) {
   }
   const cleanPhone = rawUserPhone || cleanPhoneNumber('', alertId);
   const cleanAddr = cleanLocation(alertData.address);
+
+  // If photo is already an HTTP URL or small, use it; otherwise attach in background
+  const photoUrl = typeof rawPhoto === 'string' && rawPhoto.startsWith('http') ? rawPhoto : null;
   const finalPhoto = photoUrl || (typeof rawPhoto === 'string' && rawPhoto.length > 0 ? rawPhoto : null);
 
   const selectedType = alertData.type || alertData.emergencyType || 'Medical';
@@ -247,7 +209,7 @@ export async function broadcastEmergencySos(alertData) {
     source: alertData.source || 'PUBLIC_MOBILE_SOS',
   };
 
-  // 1. Instant Local Persistence & Cross-Tab Broadcast (Zero-latency)
+  // 1. INSTANT DISPATCH: Local Storage, Custom Event & BroadcastChannel (0ms delay)
   try {
     localStorage.setItem('ser_active_sos', JSON.stringify(payload));
     if (finalPhoto) {
@@ -263,32 +225,7 @@ export async function broadcastEmergencySos(alertData) {
     console.warn('Local storage cache note:', err);
   }
 
-  // 2. High-Speed Cloud REST Object Sync (Cross-Device)
-  const cloudPayload = {
-    ...payload,
-    photo: photoUrl || (typeof finalPhoto === 'string' && finalPhoto.startsWith('http') ? finalPhoto : null),
-  };
-
-  try {
-    const restController = new AbortController();
-    const restTimer = setTimeout(() => restController.abort(), 4000);
-    fetch(REST_SYNC_URL, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'SER_ACTIVE_DISPATCH_SOS',
-        data: cloudPayload,
-      }),
-      signal: restController.signal,
-    })
-      .then(() => clearTimeout(restTimer))
-      .catch((e) => {
-        clearTimeout(restTimer);
-        console.warn('REST sync notice:', e);
-      });
-  } catch {}
-
-  // 3. Redundant SSE pub/sub relays (for real-time streaming & offline admins)
+  // 2. INSTANT CLOUD BROADCAST: POST to primary ntfy.sh relay without blocking on photo upload
   const broadcastHeaders = {
     'Title': `EMERGENCY SOS: ${String(payload.type).toUpperCase()}`,
     'Priority': '5',
@@ -298,23 +235,59 @@ export async function broadcastEmergencySos(alertData) {
     broadcastHeaders['Attach'] = photoUrl;
   }
 
-  await Promise.allSettled(
-    RELAY_HOSTS.map(async (host) => {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4000);
-        await fetch(`${host}/${EMERGENCY_TOPIC}`, {
+  const cloudPayload = {
+    ...payload,
+    photo: photoUrl || null, // Keep JSON small (<4KB) so ntfy delivers instantly
+  };
+
+  // Dispatch immediately to ntfy.sh
+  const primaryPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      await fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}`, {
+        method: 'POST',
+        headers: broadcastHeaders,
+        body: JSON.stringify(cloudPayload),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      console.log('[SER Relay] 🚀 Live SOS delivered to ntfy.sh');
+    } catch (e) {
+      console.warn('[SER Relay] Primary ntfy.sh publish note:', e);
+    }
+  })();
+
+  // Secondary fallback relay in background
+  const fallbackPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      await fetch(`https://ntfy.envs.net/${EMERGENCY_TOPIC}`, {
+        method: 'POST',
+        headers: broadcastHeaders,
+        body: JSON.stringify(cloudPayload),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+    } catch (e) {}
+  })();
+
+  // Async photo upload in background without delaying the emergency alert
+  if (rawPhoto && !photoUrl) {
+    uploadPhotoToCloud(rawPhoto).then((uploadedUrl) => {
+      if (uploadedUrl) {
+        // Broadcast updated photo URL to cloud
+        fetch(`https://ntfy.sh/${EMERGENCY_TOPIC}`, {
           method: 'POST',
-          headers: broadcastHeaders,
-          body: JSON.stringify(cloudPayload),
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-      } catch (e) {
-        console.warn(`Relay ${host} broadcast warning:`, e);
+          headers: { ...broadcastHeaders, 'Attach': uploadedUrl },
+          body: JSON.stringify({ ...cloudPayload, photo: uploadedUrl }),
+        }).catch(() => {});
       }
-    })
-  );
+    });
+  }
+
+  await Promise.race([primaryPromise, fallbackPromise]);
 
   return { success: true, payload };
 }
@@ -417,7 +390,7 @@ function startGlobalRelayService() {
   if (isServiceRunning || typeof window === 'undefined') return;
   isServiceRunning = true;
 
-  // 1. Polling Routine: Checks REST Cloud Object & Relays
+  // 1. Rapid Polling Routine: Checks ntfy.sh every 1.5 seconds
   const pollCloud = async () => {
     if (!isServiceRunning) return;
 
@@ -430,41 +403,44 @@ function startGlobalRelayService() {
     } catch {}
 
     if (isServiceRunning) {
-      globalPollTimer = setTimeout(pollCloud, 3500);
+      globalPollTimer = setTimeout(pollCloud, 1500);
     }
   };
 
-  // 2. Server-Sent Events (SSE) Stream
+  // 2. Server-Sent Events (SSE) Stream for real-time 50ms push
   const connectSse = () => {
     if (!isServiceRunning || typeof EventSource === 'undefined') return;
 
-    RELAY_HOSTS.forEach((host) => {
-      try {
-        const es = new EventSource(`${host}/${EMERGENCY_TOPIC}/sse?since=20m`);
-        es.onopen = () => {
-          console.log(`[SER Relay] SSE stream connected on ${host}`);
-        };
-        es.onmessage = (event) => {
-          try {
-            const raw = JSON.parse(event.data);
-            if (raw.event !== 'message') return;
-            const alert = parseRawMessage(raw);
-            if (alert && alert.id && !isAlertDismissed(alert.id) && !processedAlertIds.has(alert.id)) {
-              processedAlertIds.add(alert.id);
-              dispatchToAllSubscribers(alert);
-            }
-          } catch (err) {
-            console.warn('[SER Relay] SSE parse note:', err);
+    // Connect to primary ntfy.sh SSE stream
+    try {
+      const es = new EventSource(`https://ntfy.sh/${EMERGENCY_TOPIC}/sse?since=10m`);
+      es.onopen = () => {
+        console.log('[SER Relay] ⚡ Real-time SSE stream connected on ntfy.sh');
+      };
+      es.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          if (raw.event !== 'message') return;
+          const alert = parseRawMessage(raw);
+          if (alert && alert.id && !isAlertDismissed(alert.id) && !processedAlertIds.has(alert.id)) {
+            processedAlertIds.add(alert.id);
+            dispatchToAllSubscribers(alert);
           }
-        };
-        es.onerror = () => {
-          try { es.close(); } catch {}
-        };
-        globalEventSources.push(es);
-      } catch (e) {
-        console.warn(`[SER Relay] SSE init note for ${host}:`, e);
-      }
-    });
+        } catch (err) {
+          console.warn('[SER Relay] SSE parse note:', err);
+        }
+      };
+      es.onerror = () => {
+        try { es.close(); } catch {}
+        // Reconnect after 2 seconds
+        if (isServiceRunning) {
+          setTimeout(connectSse, 2000);
+        }
+      };
+      globalEventSources.push(es);
+    } catch (e) {
+      console.warn('[SER Relay] SSE init note:', e);
+    }
   };
 
   // 3. Listen to local window events
@@ -503,7 +479,7 @@ function startGlobalRelayService() {
     };
   }
 
-  // Kick off poll & SSE
+  // Kick off rapid poll & real-time SSE stream
   pollCloud();
   connectSse();
 }

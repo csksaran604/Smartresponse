@@ -115,14 +115,8 @@ export const EmergencyAlertModal = () => {
     if (!incomingAlert || !incomingAlert.id) return;
     if (isAlertDismissed(incomingAlert.id)) return;
 
-    // If currently displaying this alert, NEVER disrupt, restart siren, or replace state
+    // If currently displaying this EXACT same alert, do not restart siren or re-render
     if (activeAlertRef.current && String(activeAlertRef.current.id) === String(incomingAlert.id)) {
-      return;
-    }
-
-    // If an alert is ALREADY displaying on admin screen, retain active alert
-    if (activeAlertRef.current) {
-      console.log('An alert is already active on screen, retaining active alert:', activeAlertRef.current.id);
       return;
     }
 
