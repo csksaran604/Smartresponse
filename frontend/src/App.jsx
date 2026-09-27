@@ -29,7 +29,7 @@ const EntryRedirect = () => {
     return <Navigate to="/sos" replace />;
   }
   if (isViewer) {
-    return <Navigate to="/map" replace />;
+    return <Navigate to="/citizen" replace />;
   }
   return <Navigate to="/dashboard" replace />;
 };
@@ -38,7 +38,7 @@ const EntryRedirect = () => {
 const DashboardRoute = () => {
   const { isViewer } = useAuth();
   if (isViewer) {
-    return <Navigate to="/map" replace />;
+    return <Navigate to="/citizen" replace />;
   }
   return <DashboardPage />;
 };

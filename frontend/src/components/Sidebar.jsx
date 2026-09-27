@@ -19,11 +19,11 @@ export const Sidebar = ({ isOpen, setIsOpen }) => {
 
   const allMainLinks = [
     { to: '/', label: 'Dashboard', icon: LayoutDashboard, adminOnly: true },
-    { to: '/map', label: 'Live GPS Map', icon: MapPin },
-    { to: '/detection', label: 'AI Detection', icon: ScanEye, badge: 'AI' },
-    { to: '/units', label: 'Emergency Units', icon: Ambulance },
-    { to: '/alerts', label: 'Alerts', icon: Bell },
-    { to: '/reports', label: 'Reports', icon: BarChart3 },
+    { to: '/map', label: 'Live GPS Map', icon: MapPin, adminOnly: true },
+    { to: '/detection', label: 'AI Detection', icon: ScanEye, badge: 'AI', adminOnly: true },
+    { to: '/units', label: 'Emergency Units', icon: Ambulance, adminOnly: true },
+    { to: '/alerts', label: 'Alerts', icon: Bell, adminOnly: true },
+    { to: '/reports', label: 'Reports', icon: BarChart3, adminOnly: true },
     { to: '/citizen', label: 'Citizen SOS & Help', icon: Radio, badge: 'SOS' },
   ];
 
